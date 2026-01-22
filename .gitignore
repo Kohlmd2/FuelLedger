@@ -15,7 +15,9 @@ env/
 
 # Local data
 .fuel_profit_data/
+fuel_profit_data/
 data/*.csv
+data_samples/*.csv
 
 # OS
 .DS_Store
