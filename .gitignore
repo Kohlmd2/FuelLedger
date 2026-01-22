@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Streamlit
+.streamlit/
+
+# Local data
+.fuel_profit_data/
+data/*.csv
+
+# OS
+.DS_Store
