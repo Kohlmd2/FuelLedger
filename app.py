@@ -267,7 +267,7 @@ GRADE_MAP = {
     "SUPUNL": 93,
 }
 
-CREDIT_TENDERS = {"creditCards", "generic", "creditCards"}
+CREDIT_TENDERS = {"creditCards", "generic"}
 CASH_TENDERS = {"cash", "debitCards"}
 
 
@@ -294,6 +294,7 @@ def clean_transactions(df: pd.DataFrame) -> pd.DataFrame:
         np.where(tender.eq("debitCards"), "DEBIT",
                  np.where(tender.isin(CREDIT_TENDERS) | tender.eq("creditCards"), "CREDIT", "OTHER"))
     )
+    # Treat OTHER as CASH for pricing so totals aren't undercounted; warn in UI if any appear.
     df["PriceTier"] = np.where(df["TenderType"].eq("CREDIT"), "CREDIT", "CASH")
 
     df["Gallons"] = pd.to_numeric(df["Gallons Sold"], errors="coerce").fillna(0.0)
@@ -393,10 +394,53 @@ def build_profit_table(summary: pd.DataFrame, prices: pd.DataFrame, costs: pd.Da
         out = pd.concat(out_parts, ignore_index=True) if out_parts else base.copy()
         return out
 
-    profit = _asof_by_grade(profit, prices_n[["Date", "Grade", "CashPrice", "CreditPrice"]].dropna(subset=["Grade"]), ["CashPrice", "CreditPrice"])
-    profit = _asof_by_grade(profit, costs_n[["Date", "Grade", "CostPerGallon"]].dropna(subset=["Grade"]), ["CostPerGallon"])
+    profit = _asof_by_grade(
+        profit,
+        prices_n[["Date", "Grade", "CashPrice", "CreditPrice"]].dropna(subset=["Grade"]),
+        ["CashPrice", "CreditPrice"],
+    )
+    profit = _asof_by_grade(
+        profit,
+        costs_n[["Date", "Grade", "CostPerGallon"]].dropna(subset=["Grade"]),
+        ["CostPerGallon"],
+    )
 
-    # Fill missing postings with 0.0 so calculations don't break; UI can warn elsewhere.
+    # 89 cost blending: if 89 has no cost posted, use the as-of average of 87 and 93.
+    if not profit.empty and "Grade" in profit.columns:
+        mask_89 = profit["Grade"] == 89
+        if mask_89.any():
+            base_89 = profit.loc[mask_89, ["Date"]].copy()
+            base_89["__idx"] = base_89.index
+            base_89 = base_89.sort_values("Date")
+            costs_87 = costs_n[costs_n["Grade"] == 87].sort_values("Date")
+            costs_93 = costs_n[costs_n["Grade"] == 93].sort_values("Date")
+
+            if not costs_87.empty and not costs_93.empty:
+                c87 = pd.merge_asof(
+                    base_89,
+                    costs_87[["Date", "CostPerGallon"]],
+                    on="Date",
+                    direction="backward",
+                    allow_exact_matches=True,
+                ).rename(columns={"CostPerGallon": "Cost87"})
+                c93 = pd.merge_asof(
+                    base_89,
+                    costs_93[["Date", "CostPerGallon"]],
+                    on="Date",
+                    direction="backward",
+                    allow_exact_matches=True,
+                ).rename(columns={"CostPerGallon": "Cost93"})
+                blended = (c87["Cost87"] + c93["Cost93"]) / 2
+                blended.index = base_89["__idx"].values
+
+                fill_mask = profit.loc[mask_89, "CostPerGallon"].isna() | (profit.loc[mask_89, "CostPerGallon"] <= 0)
+                profit.loc[mask_89 & fill_mask, "CostPerGallon"] = blended.loc[profit.loc[mask_89 & fill_mask].index].values
+
+    # Track missing postings for UI warnings before filling with 0.0.
+    profit["_MissingPrice"] = profit[["CashPrice", "CreditPrice"]].isna().any(axis=1)
+    profit["_MissingCost"] = profit["CostPerGallon"].isna()
+
+    # Fill missing postings with 0.0 so calculations don't break; UI will warn.
     for c in ["CashPrice", "CreditPrice", "CostPerGallon"]:
         if c not in profit.columns:
             profit[c] = 0.0
@@ -825,6 +869,8 @@ if page == "Fuel Calculator":
         st.dataframe(raw.head(30), use_container_width=True)
 
     clean = clean_transactions(raw)
+    if (clean["TenderType"] == "OTHER").any():
+        st.warning("Some transactions have unrecognized tender types and are treated as CASH for pricing. Review tender codes if this looks wrong.")
     with st.expander("Preview CLEAN transactions"):
         st.dataframe(clean.head(50), use_container_width=True)
 
@@ -863,11 +909,27 @@ if page == "Fuel Calculator":
     def has_missing(df, cols):
         return df[cols].isna().any().any()
 
-    if has_missing(prices, ["CashPrice", "CreditPrice"]) or has_missing(costs, ["CostPerGallon"]):
-        st.warning("Fill in all prices and costs to compute profit.")
+    def has_missing_required_costs(costs_df):
+        if costs_df is None or costs_df.empty:
+            return True
+        tmp = costs_df.copy()
+        tmp["Grade"] = pd.to_numeric(tmp["Grade"], errors="coerce")
+        req = tmp[tmp["Grade"].isin([87, 93])]
+        return req["CostPerGallon"].isna().any()
+
+    if has_missing(prices, ["CashPrice", "CreditPrice"]) or has_missing_required_costs(costs):
+        st.warning("Fill in all posted prices and costs for grades 87 and 93 to compute profit.")
         st.stop()
 
     profit = build_profit_table(summary, prices, costs, credit_fee_rate)
+    if profit.get("_MissingPrice", pd.Series(dtype=bool)).any() or profit.get("_MissingCost", pd.Series(dtype=bool)).any():
+        missing_prices = int(profit.get("_MissingPrice", pd.Series(dtype=bool)).sum())
+        missing_costs = int(profit.get("_MissingCost", pd.Series(dtype=bool)).sum())
+        st.warning(
+            f"Some rows are missing posted prices or costs. "
+            f"Missing price rows: {missing_prices}; missing cost rows: {missing_costs}. "
+            "Those values were treated as $0.00."
+        )
 
     st.subheader("Results")
 
@@ -1687,6 +1749,8 @@ elif page == "Inside COGS Calculator":
                     daily_matched = matched_items[matched_items["DateSold"] == selected_date] if not matched_items.empty else pd.DataFrame()
                     daily_all = merged[merged["DateSold"] == selected_date]
                     total_units_daily = daily_all["Quantity"].sum()
+                    matched_units_daily = daily_matched["Quantity"].sum() if not daily_matched.empty else 0
+                    coverage_units_pct_daily = (matched_units_daily / total_units_daily * 100) if total_units_daily > 0 else 0
                     total_cogs_daily = daily_all["COGS"].sum()
                     retail_sales_est = daily_all["RetailSalesEstimate"].sum()
                     est_gp = daily_all["RetailSalesEstimate"].sum() - total_cogs_daily
@@ -1706,7 +1770,7 @@ elif page == "Inside COGS Calculator":
                         "ActualGrossProfitTotal": actual_gp,
                         "CreditCardFeesTotal": cc_fees_daily,
                         "NetInsideProfitTotal": net_inside_daily,
-                        "CoverageUnitsPct": coverage_units_pct,
+                        "CoverageUnitsPct": coverage_units_pct_daily,
                         "MissingSkuCount": missing_count,
                     }])
 
@@ -1721,7 +1785,11 @@ elif page == "Inside COGS Calculator":
                     inside_sales_daily = float(daily_all["ActualSales"].sum())
                     inside_cogs_daily = float(daily_all["COGS"].sum())
                     inside_cc_fees_daily = float(daily_all["CreditCardFees"].sum())
-                    notes = f"From ProductReportExport (coverage {coverage_units_pct:.1f}%). CC fees at {inside_cc_fee_rate:.4f}."
+                    daily_matched = matched_items[matched_items["DateSold"] == selected_date] if not matched_items.empty else pd.DataFrame()
+                    total_units_daily = daily_all["Quantity"].sum()
+                    matched_units_daily = daily_matched["Quantity"].sum() if not daily_matched.empty else 0
+                    coverage_units_pct_daily = (matched_units_daily / total_units_daily * 100) if total_units_daily > 0 else 0
+                    notes = f"From ProductReportExport (coverage {coverage_units_pct_daily:.1f}%). CC fees at {inside_cc_fee_rate:.4f}."
 
                     store_daily = load_store_daily()
                     store_daily["Date"] = pd.to_datetime(store_daily["Date"], errors="coerce")
@@ -1804,11 +1872,7 @@ else:
     with c_help:
         st.caption("Tip: Resize columns once; widths will persist while you add rows. Press Enter to commit a cell edit.")
 
-    if AgGrid is None:
-        st.error("For persistent column widths and reliable Enter-to-save, install AgGrid in your venv:\n\n    pip install streamlit-aggrid\n\nThen restart Streamlit (Ctrl+C, then run it again).")
-        st.stop()
-
-    # --- AgGrid editor (no auto-fit; keep user column widths) ---
+    # --- Fixed costs editor ---
     selected_month = str(month)
     month_str = selected_month
 
@@ -1816,42 +1880,52 @@ else:
     # Keep month aligned to the current selected month
     fixed_df["Month"] = selected_month
 
-    fixed_df_for_grid = fixed_df.copy()
-    fixed_df_for_grid.insert(0, "Row", range(1, len(fixed_df_for_grid) + 1))
+    if AgGrid is None:
+        st.warning("AgGrid not installed. Using basic editor (column widths won’t persist).")
+        fixed_edit = st.data_editor(
+            fixed_df,
+            num_rows="dynamic",
+            use_container_width=True,
+        )
+        st.session_state["fixed_costs_df"] = fixed_edit
+    else:
+        # --- AgGrid editor (no auto-fit; keep user column widths) ---
+        fixed_df_for_grid = fixed_df.copy()
+        fixed_df_for_grid.insert(0, "Row", range(1, len(fixed_df_for_grid) + 1))
 
-    gb = GridOptionsBuilder.from_dataframe(fixed_df_for_grid)
-    gb.configure_default_column(editable=True, resizable=True, sortable=False, filter=False)
-    gb.configure_column("Row", editable=False, pinned="left", width=80)
-    gb.configure_column("Month", editable=False)
-    gb.configure_column("Category", editable=True)
-    gb.configure_column("Amount", editable=True, type=["numericColumn"], precision=2, valueFormatter=CURRENCY_JS)
-    gb.configure_selection("multiple", use_checkbox=True, header_checkbox=True)
-    gb.configure_grid_options(
-        stopEditingWhenCellsLoseFocus=True,
-        singleClickEdit=True,
-        enterMovesDownAfterEdit=True,
-        enterMovesDown=True,
-    )
-    grid_options = gb.build()
+        gb = GridOptionsBuilder.from_dataframe(fixed_df_for_grid)
+        gb.configure_default_column(editable=True, resizable=True, sortable=False, filter=False)
+        gb.configure_column("Row", editable=False, pinned="left", width=80)
+        gb.configure_column("Month", editable=False)
+        gb.configure_column("Category", editable=True)
+        gb.configure_column("Amount", editable=True, type=["numericColumn"], precision=2, valueFormatter=CURRENCY_JS)
+        gb.configure_selection("multiple", use_checkbox=True, header_checkbox=True)
+        gb.configure_grid_options(
+            stopEditingWhenCellsLoseFocus=True,
+            singleClickEdit=True,
+            enterMovesDownAfterEdit=True,
+            enterMovesDown=True,
+        )
+        grid_options = gb.build()
 
-    grid_response = AgGrid(
-        fixed_df_for_grid,
-        gridOptions=grid_options,
-        allow_unsafe_jscode=True,
-        update_mode=GridUpdateMode.VALUE_CHANGED,
-        data_return_mode=DataReturnMode.AS_INPUT,
-        fit_columns_on_grid_load=False,
-        theme="streamlit",
-        height=260,
-        key=f"fixed_costs_grid_{month_str}_{st.session_state.get('fixed_costs_grid_version', 0)}",
-        reload_data=bool(st.session_state.get("fixed_costs_grid_reload", False)),
-    )
-    st.session_state["fixed_costs_grid_reload"] = False
+        grid_response = AgGrid(
+            fixed_df_for_grid,
+            gridOptions=grid_options,
+            allow_unsafe_jscode=True,
+            update_mode=GridUpdateMode.VALUE_CHANGED,
+            data_return_mode=DataReturnMode.AS_INPUT,
+            fit_columns_on_grid_load=False,
+            theme="streamlit",
+            height=260,
+            key=f"fixed_costs_grid_{month_str}_{st.session_state.get('fixed_costs_grid_version', 0)}",
+            reload_data=bool(st.session_state.get("fixed_costs_grid_reload", False)),
+        )
+        st.session_state["fixed_costs_grid_reload"] = False
 
-    edited = pd.DataFrame(grid_response["data"])
-    selected_rows = grid_response.get("selected_rows", [])
-    fixed_edit = edited.drop(columns=["Row"], errors="ignore").copy()
-    st.session_state["fixed_costs_df"] = fixed_edit
+        edited = pd.DataFrame(grid_response["data"])
+        selected_rows = grid_response.get("selected_rows", [])
+        fixed_edit = edited.drop(columns=["Row"], errors="ignore").copy()
+        st.session_state["fixed_costs_df"] = fixed_edit
 
     if st.button("Save monthly fixed costs"):
         # Merge back into the full fixed-costs table (replace this month)
