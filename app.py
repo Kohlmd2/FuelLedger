@@ -27,6 +27,24 @@ except Exception:
 # ============================================================
 st.set_page_config(page_title="Fuel Profit Tracker", layout="wide")
 
+# Sidebar layout helpers
+st.markdown(
+    """
+    <style>
+        section[data-testid="stSidebar"] [data-testid="stSidebarContent"] {
+            position: relative;
+        }
+        .sidebar-bottom {
+            position: sticky;
+            bottom: 0;
+            padding-bottom: 1rem;
+            background: inherit;
+        }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 # Sidebar layout: top navigation, bottom user controls
 
 DATA_DIR = Path(".fuel_profit_data")
@@ -917,6 +935,8 @@ if st.session_state.get("is_admin"):
                 else:
                     st.error(msg)
 
+st.sidebar.markdown('<div class="sidebar-bottom">', unsafe_allow_html=True)
+
 if st.sidebar.button("Log out"):
     for k in [
         "user_id",
@@ -931,6 +951,7 @@ if st.sidebar.button("Log out"):
     st.rerun()
 
 st.sidebar.markdown(f"**Signed in as:** `{st.session_state.get('username')}`")
+st.sidebar.markdown("</div>", unsafe_allow_html=True)
 
 # ============================================================
 # Page: Fuel Calculator
