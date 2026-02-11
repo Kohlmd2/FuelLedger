@@ -10,6 +10,7 @@ import hmac
 import re
 import secrets
 import sqlite3
+import json
 
 # Optional (recommended) grid component for persistent column widths.
 # Install with: pip install streamlit-aggrid
@@ -55,6 +56,7 @@ DATA_DIR = Path(".fuel_profit_data")
 DATA_DIR.mkdir(exist_ok=True)
 
 AUTH_DB = DATA_DIR / "auth.db"
+REMEMBER_FILE = DATA_DIR / "remember_login.json"
 
 
 def _auth_conn():
@@ -141,10 +143,41 @@ def _admin_exists() -> bool:
     return row is not None
 
 
+def _load_remembered_user():
+    if not REMEMBER_FILE.exists():
+        return None
+    try:
+        data = json.loads(REMEMBER_FILE.read_text())
+    except Exception:
+        return None
+    user_id = data.get("user_id")
+    if not user_id:
+        return None
+    with _auth_conn() as conn:
+        row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    return row
+
+
+def _save_remembered_user(user_id: int) -> None:
+    REMEMBER_FILE.write_text(json.dumps({"user_id": int(user_id)}))
+
+
+def _clear_remembered_user() -> None:
+    if REMEMBER_FILE.exists():
+        REMEMBER_FILE.unlink()
+
+
 def require_login() -> None:
     init_auth_db()
 
     if st.session_state.get("user_id"):
+        return
+
+    remembered = _load_remembered_user()
+    if remembered:
+        st.session_state["user_id"] = int(remembered["id"])
+        st.session_state["username"] = remembered["username"]
+        st.session_state["is_admin"] = bool(remembered["is_admin"])
         return
 
     if not _admin_exists():
@@ -180,6 +213,7 @@ def require_login() -> None:
         with st.form("login_form"):
             login = st.text_input("Username or email")
             password = st.text_input("Password", type="password")
+            remember_me = st.checkbox("Remember me on this device", value=True)
             submitted = st.form_submit_button("Log in")
     if submitted:
         row = _verify_user(login, password)
@@ -187,6 +221,8 @@ def require_login() -> None:
             st.session_state["user_id"] = int(row["id"])
             st.session_state["username"] = row["username"]
             st.session_state["is_admin"] = bool(row["is_admin"])
+            if remember_me:
+                _save_remembered_user(int(row["id"]))
             for k in [
                 "pricebook_df",
                 "pricebook_loaded_at",
@@ -1007,6 +1043,7 @@ if st.session_state.get("is_admin"):
 st.sidebar.markdown('<div class="sidebar-bottom">', unsafe_allow_html=True)
 
 if st.sidebar.button("Log out"):
+    _clear_remembered_user()
     for k in [
         "user_id",
         "username",
