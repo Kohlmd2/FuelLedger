@@ -2114,6 +2114,7 @@ elif page == "Invoices":
     st.caption("Keep vendor contact info and ordering schedules here.")
 
     vendors = load_invoice_vendors()
+    vendors = vendors.fillna("")
     vendors_edit = st.data_editor(
         vendors,
         num_rows="dynamic",
@@ -2153,6 +2154,7 @@ elif page == "Invoices":
 
     vendor_options = (
         vendors_edit.get("Vendor", pd.Series([], dtype=str))
+        .fillna("")
         .astype(str)
         .str.strip()
         .replace({"nan": ""})
@@ -2187,9 +2189,9 @@ elif page == "Invoices":
     else:
         view = invoices.copy()
         view["Date"] = pd.to_datetime(view["Date"], errors="coerce")
-        view["Vendor"] = view["Vendor"].astype(str)
-        view["Amount"] = pd.to_numeric(view["Amount"], errors="coerce").fillna(0.0)
-        view["Notes"] = view.get("Notes", "").astype(str)
+    view["Vendor"] = view["Vendor"].fillna("").astype(str)
+    view["Amount"] = pd.to_numeric(view["Amount"], errors="coerce").fillna(0.0)
+    view["Notes"] = view.get("Notes", "").fillna("").astype(str)
         view = view.sort_values("Date", ascending=False)
 
         edited_invoices = st.data_editor(
