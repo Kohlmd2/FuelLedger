@@ -2301,6 +2301,13 @@ elif page == "Inventory":
             st.error("⚠️ Price book is empty. Upload a price book in the 'Price Book' tab first.")
         else:
             st.info(f"Price book loaded: {len(pricebook)} SKUs available")
+
+        # Initialize session state for inventory form
+        st.session_state.setdefault("inv_sku_input", "")
+        st.session_state.setdefault("inv_name", "")
+        st.session_state.setdefault("inv_qty", 0.0)
+        st.session_state.setdefault("inv_cost", 0.0)
+        st.session_state.setdefault("inv_lookup_msg", "")
         
         def _inv_lookup():
             sku_val = st.session_state.get("inv_sku_input", "").strip()
@@ -2322,7 +2329,7 @@ elif page == "Inventory":
 
         col1, col2 = st.columns([3, 1])
         with col1:
-            sku_input = st.text_input("SKU/UPC", key="inv_sku_input")
+            sku_input = st.text_input("SKU/UPC", key="inv_sku_input", on_change=_inv_lookup)
         with col2:
             st.write("")  # Spacer for alignment
             st.write("")  # Spacer for alignment
@@ -2335,12 +2342,11 @@ elif page == "Inventory":
         
         col3, col4, col5 = st.columns([1, 1, 1])
         with col3:
-            qty_input = st.number_input("Quantity", min_value=0.0, value=float(st.session_state.get("inv_qty", 0.0)), step=1.0, key="inv_qty")
+            qty_input = st.number_input("Quantity", min_value=0.0, step=1.0, key="inv_qty")
         with col4:
             cost_input = st.number_input(
                 "Unit Cost ($)", 
                 min_value=0.0, 
-                value=float(st.session_state.get("inv_cost", 0.0)),
                 step=0.01,
                 format="%.2f",
                 key="inv_cost"
