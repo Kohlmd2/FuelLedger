@@ -2121,6 +2121,7 @@ elif page == "Invoices":
         vendors,
         num_rows="dynamic",
         use_container_width=True,
+        key="invoice_vendors_editor",
         column_config={
             "Vendor": st.column_config.TextColumn("Vendor"),
             "ContactPerson": st.column_config.TextColumn("Contact Person"),
@@ -2142,10 +2143,15 @@ elif page == "Invoices":
             "Notes": st.column_config.TextColumn("Notes"),
         },
     )
-    if st.button("Save vendors"):
-        save_invoice_vendors(vendors_edit)
-        st.success("Vendors saved.")
-        st.rerun()
+
+    # Auto-save vendor directory when it changes
+    vendors_clean = vendors_edit.fillna("")
+    vendors_csv = vendors_clean.to_csv(index=False)
+    last_saved = st.session_state.get("invoice_vendors_last_saved")
+    if last_saved != vendors_csv:
+        save_invoice_vendors(vendors_clean)
+        st.session_state["invoice_vendors_last_saved"] = vendors_csv
+        st.toast("Vendors auto-saved.")
 
     st.divider()
 
