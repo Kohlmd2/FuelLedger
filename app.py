@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 import calendar
-from datetime import date
+from datetime import date, datetime
 import hashlib
 import hmac
 import re
@@ -624,6 +624,31 @@ def save_store_daily(df: pd.DataFrame) -> None:
         out["Notes"] = ""
     _save_csv(user_data_file("store_daily.csv"), out)
 
+# -----------------------------
+# Invoice helpers
+# -----------------------------
+
+def load_invoices() -> pd.DataFrame:
+    df = _load_csv(user_data_file("invoices.csv"))
+    if df.empty:
+        return pd.DataFrame(columns=["Date", "Vendor", "Amount", "Notes"])
+    df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+    df["Vendor"] = df.get("Vendor", "").astype(str)
+    df["Amount"] = pd.to_numeric(df.get("Amount", 0.0), errors="coerce").fillna(0.0)
+    if "Notes" not in df.columns:
+        df["Notes"] = ""
+    return df
+
+
+def save_invoices(df: pd.DataFrame) -> None:
+    out = df.copy()
+    out["Date"] = pd.to_datetime(out["Date"], errors="coerce")
+    out["Vendor"] = out.get("Vendor", "").astype(str)
+    out["Amount"] = pd.to_numeric(out.get("Amount", 0.0), errors="coerce").fillna(0.0)
+    if "Notes" not in out.columns:
+        out["Notes"] = ""
+    _save_csv(user_data_file("invoices.csv"), out)
+
 # ============================================================
 # Price Book helpers
 # ============================================================
@@ -847,7 +872,7 @@ if st.session_state.get("is_admin"):
 st.sidebar.title("Navigation")
 page = st.sidebar.radio(
     "Go to",
-    ["Fuel Calculator", "Tank Deliveries", "Inside COGS Calculator", "Daily Totals History", "Store Profit (Day + Month)"],
+    ["Fuel Calculator", "Tank Deliveries", "Inside COGS Calculator", "Daily Totals History", "Invoices", "Store Profit (Day + Month)"],
     index=0,
 )
 
@@ -898,13 +923,79 @@ if page == "Fuel Calculator":
         columns=["Date", "Grade", "CostPerGallon"],
     )
 
+    # Load last posted prices to use as defaults
+    last_prices = load_last_posted_prices()
+    for grade, (cash_p, credit_p) in last_prices.items():
+        default_prices.loc[default_prices["Grade"] == grade, "CashPrice"] = cash_p
+        default_prices.loc[default_prices["Grade"] == grade, "CreditPrice"] = credit_p
+
+    # Load last posted costs to use as defaults
+    try:
+        last_costs_df = _load_csv(user_data_file("last_posted_costs.csv"))
+        if not last_costs_df.empty:
+            last_costs_df["Grade"] = pd.to_numeric(last_costs_df["Grade"], errors="coerce")
+            last_costs_df["CostPerGallon"] = pd.to_numeric(last_costs_df["CostPerGallon"], errors="coerce")
+            for _, row in last_costs_df.dropna(subset=["Grade"]).iterrows():
+                grade = int(row["Grade"])
+                cost = row.get("CostPerGallon")
+                if pd.notna(cost):
+                    default_costs.loc[default_costs["Grade"] == grade, "CostPerGallon"] = cost
+    except Exception:
+        pass
+
+    # Initialize session state for prices and costs if not present
+    if "fuel_prices_editor" not in st.session_state:
+        st.session_state.fuel_prices_editor = default_prices.copy()
+    if "fuel_costs_editor" not in st.session_state:
+        st.session_state.fuel_costs_editor = default_costs.copy()
+
     c1, c2 = st.columns(2)
     with c1:
         st.markdown("### Prices (posted)")
-        prices = st.data_editor(default_prices, num_rows="fixed", use_container_width=True)
+        st.session_state.fuel_prices_editor = st.data_editor(
+            st.session_state.fuel_prices_editor,
+            num_rows="fixed",
+            use_container_width=True,
+            key="prices_editor_data",
+            column_config={
+                "CashPrice": st.column_config.NumberColumn("CashPrice", format="$%.4f"),
+                "CreditPrice": st.column_config.NumberColumn("CreditPrice", format="$%.4f"),
+            }
+        )
     with c2:
         st.markdown("### Costs (your cost/gal)")
-        costs = st.data_editor(default_costs, num_rows="fixed", use_container_width=True)
+        st.session_state.fuel_costs_editor = st.data_editor(
+            st.session_state.fuel_costs_editor,
+            num_rows="fixed",
+            use_container_width=True,
+            key="costs_editor_data",
+            column_config={
+                "CostPerGallon": st.column_config.NumberColumn("CostPerGallon", format="$%.4f"),
+            }
+        )
+
+    # Reference for easier use
+    prices = st.session_state.fuel_prices_editor
+    costs = st.session_state.fuel_costs_editor
+
+    # Auto-calculate 89 cost as average of 87 and 93 if 89 is empty but 87 and 93 are filled
+    for idx, row in costs.iterrows():
+        if pd.notna(row["Grade"]) and int(row["Grade"]) == 89:
+            grade_87_cost = costs[(costs["Grade"] == 87) & (costs["Date"] == row["Date"])]["CostPerGallon"]
+            grade_93_cost = costs[(costs["Grade"] == 93) & (costs["Date"] == row["Date"])]["CostPerGallon"]
+            if not grade_87_cost.empty and not grade_93_cost.empty and pd.notna(grade_87_cost.iloc[0]) and pd.notna(grade_93_cost.iloc[0]):
+                costs.at[idx, "CostPerGallon"] = (grade_87_cost.iloc[0] + grade_93_cost.iloc[0]) / 2
+                st.session_state.fuel_costs_editor.at[idx, "CostPerGallon"] = costs.at[idx, "CostPerGallon"]
+
+    # Coerce prices and costs to numeric types
+    prices = prices.copy()
+    prices["Grade"] = pd.to_numeric(prices["Grade"], errors="coerce")
+    prices["CashPrice"] = pd.to_numeric(prices["CashPrice"], errors="coerce")
+    prices["CreditPrice"] = pd.to_numeric(prices["CreditPrice"], errors="coerce")
+    
+    costs = costs.copy()
+    costs["Grade"] = pd.to_numeric(costs["Grade"], errors="coerce")
+    costs["CostPerGallon"] = pd.to_numeric(costs["CostPerGallon"], errors="coerce")
 
     def has_missing(df, cols):
         return df[cols].isna().any().any()
@@ -937,6 +1028,7 @@ if page == "Fuel Calculator":
     view = profit.copy()
 
     # Format numeric columns for display
+    view["Date"] = pd.to_datetime(view["Date"]).dt.strftime("%m-%d-%Y")
     for col in ["Gallons_CASH", "Gallons_CREDIT", "TotalGallons"]:
         view[col] = view[col].map(fmt_number)
     for col in ["CashPrice", "CreditPrice", "CostPerGallon",
@@ -974,6 +1066,7 @@ if page == "Fuel Calculator":
     st.markdown("### Daily Totals (all grades)")
 
     dview = daily.copy()
+    dview["Date"] = pd.to_datetime(dview["Date"]).dt.strftime("%m-%d-%Y")
     dview["TotalGallons"] = dview["TotalGallons"].map(fmt_number)
     for col in ["ExpectedRevenue", "POSRevenue", "COGS", "GrossProfit", "CreditCardFees", "NetFuelProfit"]:
         dview[col] = dview[col].map(fmt_currency)
@@ -984,6 +1077,31 @@ if page == "Fuel Calculator":
     # Save into history (upsert by Date)
     st.divider()
     if st.button("Save these daily totals to History"):
+        # Save prices and costs for next time
+        try:
+            last_prices_dict = {}
+            for _, row in prices.dropna(subset=["Grade"]).iterrows():
+                grade = int(row["Grade"])
+                if pd.notna(row.get("CashPrice")) and pd.notna(row.get("CreditPrice")):
+                    last_prices_dict[grade] = (row["CashPrice"], row["CreditPrice"])
+            if last_prices_dict:
+                save_last_posted_prices(last_prices_dict)
+        except Exception as e:
+            st.warning(f"Could not save prices: {e}")
+
+        try:
+            last_costs_rows = []
+            for _, row in costs.dropna(subset=["Grade"]).iterrows():
+                grade = int(row["Grade"])
+                if pd.notna(row.get("CostPerGallon")):
+                    last_costs_rows.append({"Grade": grade, "CostPerGallon": row["CostPerGallon"]})
+            if last_costs_rows:
+                last_costs_df = pd.DataFrame(last_costs_rows, columns=["Grade", "CostPerGallon"])
+                _save_csv(user_data_file("last_posted_costs.csv"), last_costs_df)
+        except Exception as e:
+            st.warning(f"Could not save costs: {e}")
+
+        # Save history
         hist = load_history()
         if hist.empty:
             hist = daily.copy()
@@ -1009,101 +1127,236 @@ elif page == "Daily Totals History":
         st.info("No history yet. Go to Fuel Calculator, upload a CSV, compute totals, then Save to History.")
         st.stop()
 
-    st.subheader("Gas daily totals history")
+    st.subheader("📊 Fuel Daily Totals")
 
-    history["MarginPerGallon"] = np.where(
-        history["TotalGallons"] > 0,
-        history["NetFuelProfit"] / history["TotalGallons"],
+    # ---- Add / Update Day for fuel ----
+    with st.expander("➕ Add or Update a Day", expanded=False):
+        st.caption("Manually add or update daily fuel totals")
+        
+        hc1, hc2, hc3, hc4 = st.columns([1.2, 1.2, 1.2, 1.2])
+        with hc1:
+            h_date = st.date_input("Date", value=date.today(), key="history_date")
+        with hc2:
+            h_gallons = st.number_input("Total Gallons", min_value=0.0, value=0.0, step=10.0, format="%.1f", key="history_gallons")
+        with hc3:
+            h_pos_revenue = st.number_input("POS Revenue ($)", min_value=0.0, value=0.0, step=100.0, format="%.2f", key="history_pos_revenue")
+        with hc4:
+            h_cogs = st.number_input("COGS ($)", min_value=0.0, value=0.0, step=50.0, format="%.2f", key="history_cogs")
+        
+        col_btn1, col_btn2 = st.columns([1, 4])
+        with col_btn1:
+            if st.button("💾 Save", key="history_add", use_container_width=True):
+                new_entry = pd.DataFrame([{
+                    "Date": pd.to_datetime(h_date),
+                    "Gallons_CASH": 0.0,
+                    "Gallons_CREDIT": h_gallons,
+                    "POSAmount_CASH": 0.0,
+                    "POSAmount_CREDIT": h_pos_revenue,
+                    "TotalGallons": h_gallons,
+                    "POSRevenue": h_pos_revenue,
+                    "COGS": h_cogs,
+                    "ExpectedRevenue": h_pos_revenue,
+                    "GrossProfit": h_pos_revenue - h_cogs,
+                    "CreditCardFees": 0.0,
+                    "NetFuelProfit": h_pos_revenue - h_cogs,
+                }])
+                
+                full = history.copy()
+                full = full[~(full["Date"].dt.date == h_date)]
+                full = pd.concat([full, new_entry], ignore_index=True).sort_values("Date")
+                save_history(full)
+                
+                st.success(f"✓ Saved {h_date}")
+                st.rerun()
+
+    st.divider()
+
+    # Parse history dates
+    history["Date"] = pd.to_datetime(history["Date"], errors="coerce")
+    
+    # Get unique months from data
+    history_sorted = history.sort_values("Date")
+    date_range = history_sorted["Date"].dt.date.unique()
+    
+    if len(date_range) > 0:
+        # Create list of available months (YYYY-MM format)
+        available_months = sorted(set(pd.to_datetime(d).strftime("%Y-%m") for d in date_range))
+        
+        # Default to current month if it's in the data, otherwise use most recent
+        current_month = datetime.now().strftime("%Y-%m")
+        if current_month in available_months:
+            default_month = current_month
+        else:
+            default_month = available_months[-1]
+        
+        # Month selector dropdown
+        col1, col_space = st.columns([2, 2])
+        with col1:
+            selected_month = st.selectbox(
+                "📅 Filter by month",
+                options=available_months,
+                index=available_months.index(default_month),
+                key="month_filter"
+            )
+        
+        # Filter history by selected month
+        history_filtered = history[
+            history["Date"].dt.strftime("%Y-%m") == selected_month
+        ]
+    else:
+        history_filtered = history
+
+    history_filtered["MarginPerGallon"] = np.where(
+        history_filtered["TotalGallons"] > 0,
+        history_filtered["NetFuelProfit"] / history_filtered["TotalGallons"],
         np.nan
     )
 
     # Display
-    view = history.copy()
+    view = history_filtered.copy()
+    view["Date"] = pd.to_datetime(view["Date"]).dt.strftime("%m-%d-%Y")
     view["TotalGallons"] = view["TotalGallons"].map(fmt_number)
     for col in ["ExpectedRevenue", "POSRevenue", "COGS", "GrossProfit", "CreditCardFees", "NetFuelProfit"]:
         view[col] = view[col].map(fmt_currency)
-    view["MarginPerGallon"] = history["MarginPerGallon"].map(fmt_percent)
+    view["MarginPerGallon"] = history_filtered["MarginPerGallon"].map(fmt_percent)
 
+    st.markdown("### Daily Fuel Summary")
     st.dataframe(view.sort_values("Date"), use_container_width=True)
 
-    st.download_button(
-        "Download Full History CSV",
-        data=history.sort_values("Date").to_csv(index=False).encode("utf-8"),
-        file_name="daily_totals_history.csv",
-        mime="text/csv"
-    )
+    col_download, col_space2 = st.columns([2, 3])
+    with col_download:
+        st.download_button(
+            "📥 Download Month Data",
+            data=history_filtered.sort_values("Date").to_csv(index=False).encode("utf-8"),
+            file_name=f"daily_totals_history_{selected_month if len(date_range) > 0 else 'all'}.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
 
     st.divider()
-    if st.button("Reset history (delete saved days)"):
-        user_data_file("daily_totals_history.csv").unlink(missing_ok=True)
-        st.warning("History cleared. Refresh the page.")
+    with st.expander("🗑️ Delete a Day", expanded=False):
+        if len(date_range) > 0:
+            del_fuel_date = st.selectbox(
+                "Select day to delete",
+                sorted(history_filtered["Date"].dt.date.unique()),
+                key="history_delete",
+            )
+            if st.button("Delete selected day", key="history_delete_btn", use_container_width=True):
+                full = history.copy()
+                full = full[full["Date"].dt.date != del_fuel_date]
+                save_history(full)
+                st.success(f"✓ Deleted {del_fuel_date}")
+                st.rerun()
+        else:
+            st.info("No days to delete.")
 
     st.divider()
 
     # ---- Inside-store daily history
-    st.subheader("Inside COGS history (daily)")
+    st.subheader("🏪 Daily Inside Store Totals")
 
     store_daily = load_store_daily()
     store_daily["Date"] = pd.to_datetime(store_daily["Date"], errors="coerce")
 
-    c1, c2, c3, c4 = st.columns([1.2, 1.2, 1.2, 1.2])
-    with c1:
-        d = st.date_input("Date", value=date.today(), key="inside_history_date")
-    with c2:
-        inside_sales = st.number_input("Inside Sales ($)", min_value=0.0, value=0.0, step=100.0, format="%.2f", key="inside_history_sales")
-    with c3:
-        inside_cogs = st.number_input("Inside COGS ($)", min_value=0.0, value=0.0, step=50.0, format="%.2f", key="inside_history_cogs")
-    with c4:
-        other_var = st.number_input("Other Var Costs ($)", min_value=0.0, value=0.0, step=25.0, format="%.2f", key="inside_history_other")
+    # ---- Add / Update Day for inside-store ----
+    with st.expander("➕ Add or Update a Day (Inside Store)", expanded=False):
+        st.caption("Record daily inside-store sales, COGS, and other variable costs")
+        
+        c1, c2, c3, c4 = st.columns([1.2, 1.2, 1.2, 1.2])
+        with c1:
+            d = st.date_input("Date", value=date.today(), key="inside_history_date")
+        with c2:
+            inside_sales = st.number_input("Inside Sales ($)", min_value=0.0, value=0.0, step=100.0, format="%.2f", key="inside_history_sales")
+        with c3:
+            inside_cogs = st.number_input("Inside COGS ($)", min_value=0.0, value=0.0, step=50.0, format="%.2f", key="inside_history_cogs")
+        with c4:
+            other_var = st.number_input("Other Var Costs ($)", min_value=0.0, value=0.0, step=25.0, format="%.2f", key="inside_history_other")
 
-    if st.button("Add / Update Day", key="inside_history_add"):
-        new_row = pd.DataFrame([{
-            "Date": pd.to_datetime(d),
-            "InsideSales": inside_sales,
-            "InsideCOGS": inside_cogs,
-            "OtherVariableCosts": other_var,
-            "Notes": "",
-        }])
+        col_btn1, col_btn2 = st.columns([1, 4])
+        with col_btn1:
+            if st.button("💾 Save", key="inside_history_add", use_container_width=True):
+                new_row = pd.DataFrame([{
+                    "Date": pd.to_datetime(d),
+                    "InsideSales": inside_sales,
+                    "InsideCOGS": inside_cogs,
+                    "OtherVariableCosts": other_var,
+                    "Notes": "",
+                }])
 
-        full = store_daily.copy()
-        full = full[~(full["Date"].dt.date == d)]
-        full = pd.concat([full, new_row], ignore_index=True).sort_values("Date")
-        save_store_daily(full)
+                full = store_daily.copy()
+                full = full[~(full["Date"].dt.date == d)]
+                full = pd.concat([full, new_row], ignore_index=True).sort_values("Date")
+                save_store_daily(full)
 
-        st.success(f"Saved {d}.")
-        st.rerun()
+                st.success(f"✓ Saved {d}")
+                st.rerun()
 
-    st.markdown("### Saved days")
+    # --- Month selector for inside-store saved days (filter view) ---
     if store_daily.empty:
         st.info("No saved inside-store days yet.")
+        store_daily_filtered = store_daily
     else:
-        sm = store_daily.copy()
-        sm["NetInsideSales"] = (
-            pd.to_numeric(sm["InsideSales"], errors="coerce").fillna(0.0)
-            - pd.to_numeric(sm["InsideCOGS"], errors="coerce").fillna(0.0)
-            - pd.to_numeric(sm["OtherVariableCosts"], errors="coerce").fillna(0.0)
-        )
-        sm["MarginPct"] = np.where(
-            pd.to_numeric(sm["InsideSales"], errors="coerce").fillna(0.0) > 0,
-            sm["NetInsideSales"] / pd.to_numeric(sm["InsideSales"], errors="coerce").fillna(0.0),
-            np.nan,
-        )
-        sm["InsideSales"] = sm["InsideSales"].map(fmt_currency)
-        sm["InsideCOGS"] = sm["InsideCOGS"].map(fmt_currency)
-        sm["OtherVariableCosts"] = sm["OtherVariableCosts"].map(fmt_currency)
-        sm["NetInsideSales"] = sm["NetInsideSales"].map(fmt_currency)
-        sm["MarginPct"] = sm["MarginPct"].map(fmt_percent)
-        sm = sm.drop(columns=["Notes"], errors="ignore")
-        st.dataframe(sm.sort_values("Date"), use_container_width=True)
+        st.markdown("### Daily Inside Sales Summary")
+        store_daily_sorted = store_daily.sort_values("Date")
+        inside_date_range = store_daily_sorted["Date"].dt.date.unique()
 
-        del_date = st.selectbox("Delete a day", sorted(store_daily["Date"].dt.date.unique()), key="inside_history_delete")
-        if st.button("Delete selected day", key="inside_history_delete_btn"):
-            full = load_store_daily()
-            full["Date"] = pd.to_datetime(full["Date"], errors="coerce")
-            full = full[full["Date"].dt.date != del_date]
-            save_store_daily(full)
-            st.success(f"Deleted {del_date}.")
-            st.rerun()
+        if len(inside_date_range) > 0:
+            inside_available_months = sorted(set(pd.to_datetime(d).strftime("%Y-%m") for d in inside_date_range))
+            current_month = datetime.now().strftime("%Y-%m")
+            if current_month in inside_available_months:
+                default_inside_month = current_month
+            else:
+                default_inside_month = inside_available_months[-1]
+
+            colm1, colm_space = st.columns([2, 2])
+            with colm1:
+                selected_inside_month = st.selectbox(
+                    "📅 Filter by month",
+                    options=inside_available_months,
+                    index=inside_available_months.index(default_inside_month),
+                    key="inside_month_filter",
+                )
+
+            store_daily_filtered = store_daily[store_daily["Date"].dt.strftime("%Y-%m") == selected_inside_month]
+        else:
+            store_daily_filtered = store_daily.copy()
+
+        if store_daily_filtered.empty:
+            st.info("No saved inside-store days for the selected month.")
+        else:
+            sm = store_daily_filtered.copy()
+            sm["Date"] = pd.to_datetime(sm["Date"]).dt.strftime("%m-%d-%Y")
+            sm["NetInsideSales"] = (
+                pd.to_numeric(sm["InsideSales"], errors="coerce").fillna(0.0)
+                - pd.to_numeric(sm["InsideCOGS"], errors="coerce").fillna(0.0)
+                - pd.to_numeric(sm["OtherVariableCosts"], errors="coerce").fillna(0.0)
+            )
+            sm["MarginPct"] = np.where(
+                pd.to_numeric(sm["InsideSales"], errors="coerce").fillna(0.0) > 0,
+                sm["NetInsideSales"] / pd.to_numeric(sm["InsideSales"], errors="coerce").fillna(0.0),
+                np.nan,
+            )
+            sm["InsideSales"] = sm["InsideSales"].map(fmt_currency)
+            sm["InsideCOGS"] = sm["InsideCOGS"].map(fmt_currency)
+            sm["OtherVariableCosts"] = sm["OtherVariableCosts"].map(fmt_currency)
+            sm["NetInsideSales"] = sm["NetInsideSales"].map(fmt_currency)
+            sm["MarginPct"] = sm["MarginPct"].map(fmt_percent)
+            sm = sm.drop(columns=["Notes"], errors="ignore")
+            st.dataframe(sm.sort_values("Date"), use_container_width=True)
+
+            with st.expander("🗑️ Delete a Day", expanded=False):
+                del_date = st.selectbox(
+                    "Select day to delete",
+                    sorted(store_daily_filtered["Date"].dt.date.unique()),
+                    key="inside_history_delete",
+                )
+                if st.button("Delete selected day", key="inside_history_delete_btn", use_container_width=True):
+                    full = load_store_daily()
+                    full["Date"] = pd.to_datetime(full["Date"], errors="coerce")
+                    full = full[full["Date"].dt.date != del_date]
+                    save_store_daily(full)
+                    st.success(f"✓ Deleted {del_date}")
+                    st.rerun()
 
 # ============================================================
 # Page: Tank Deliveries (simple log)
@@ -1211,7 +1464,7 @@ elif page == "Tank Deliveries":
         st.info("No deliveries logged yet.")
     else:
         dv = deliveries.copy()
-        dv["Date"] = pd.to_datetime(dv["Date"], errors="coerce").dt.date
+        dv["Date"] = pd.to_datetime(dv["Date"], errors="coerce").dt.strftime("%m-%d-%Y")
         dv["GallonsDelivered"] = pd.to_numeric(dv["GallonsDelivered"], errors="coerce").fillna(0.0).map(fmt_number)
         dv["PricePerGallon"] = pd.to_numeric(dv["PricePerGallon"], errors="coerce").fillna(0.0).map(fmt_currency)
         st.dataframe(dv.sort_values("Date", ascending=False), use_container_width=True)
@@ -1609,6 +1862,7 @@ elif page == "Inside COGS Calculator":
                     "CreditCardFees": "CC Fees",
                     "NetInsideProfit": "Net Inside Profit"
                 })
+                view_matched["Date Sold"] = pd.to_datetime(view_matched["Date Sold"]).dt.strftime("%m-%d-%Y")
                 view_matched["Qty"] = view_matched["Qty"].map(fmt_number)
                 for col in ["Unit Cost", "COGS", "Retail Price", "Est. Retail Sales", "Actual Sales", "Gross Profit", "CC Fees", "Net Inside Profit"]:
                     view_matched[col] = view_matched[col].map(fmt_currency)
@@ -1739,75 +1993,123 @@ elif page == "Inside COGS Calculator":
 
                 st.divider()
 
-                # --- Save Daily Inside Totals ---
+                # --- Save Daily Inside Totals & Store Profit ---
                 st.subheader("Save Daily Inside Totals")
 
                 dates_in_report = sorted(agg["DateSold"].unique())
                 selected_date = st.selectbox("Select date to save", dates_in_report)
 
-                if st.button("Save Daily Inside Totals"):
-                    daily_matched = matched_items[matched_items["DateSold"] == selected_date] if not matched_items.empty else pd.DataFrame()
-                    daily_all = merged[merged["DateSold"] == selected_date]
-                    total_units_daily = daily_all["Quantity"].sum()
-                    matched_units_daily = daily_matched["Quantity"].sum() if not daily_matched.empty else 0
-                    coverage_units_pct_daily = (matched_units_daily / total_units_daily * 100) if total_units_daily > 0 else 0
-                    total_cogs_daily = daily_all["COGS"].sum()
-                    retail_sales_est = daily_all["RetailSalesEstimate"].sum()
-                    est_gp = daily_all["RetailSalesEstimate"].sum() - total_cogs_daily
-                    actual_sales_daily = daily_all["ActualSales"].sum()
-                    actual_gp = daily_all["GrossProfit"].sum()
-                    cc_fees_daily = daily_all["CreditCardFees"].sum()
-                    net_inside_daily = daily_all["NetInsideProfit"].sum()
-                    missing_count = len(unmatched_skus[unmatched_skus["DateSold"] == selected_date]) if not unmatched_skus.empty else 0
+                st.caption("Saves inside totals and writes Inside Sales/COGS to Store Profit (Day + Month).")
+                if st.button("Save Inside Totals & Store Profit", use_container_width=True):
+                    try:
+                        # --- Save Daily Inside Totals ---
+                        daily_matched = matched_items[matched_items["DateSold"] == selected_date] if not matched_items.empty else pd.DataFrame()
+                        daily_all = merged[merged["DateSold"] == selected_date]
+                        total_units_daily = daily_all["Quantity"].sum()
+                        matched_units_daily = daily_matched["Quantity"].sum() if not daily_matched.empty else 0
+                        coverage_units_pct_daily = (matched_units_daily / total_units_daily * 100) if total_units_daily > 0 else 0
+                        total_cogs_daily = daily_all["COGS"].sum()
+                        retail_sales_est = daily_all["RetailSalesEstimate"].sum()
+                        est_gp = daily_all["RetailSalesEstimate"].sum() - total_cogs_daily
+                        actual_sales_daily = daily_all["ActualSales"].sum()
+                        actual_gp = daily_all["GrossProfit"].sum()
+                        cc_fees_daily = daily_all["CreditCardFees"].sum()
+                        net_inside_daily = daily_all["NetInsideProfit"].sum()
+                        missing_count = len(unmatched_skus[unmatched_skus["DateSold"] == selected_date]) if not unmatched_skus.empty else 0
 
-                    row_to_save = pd.DataFrame([{
-                        "Date": selected_date,
-                        "TotalUnits": total_units_daily,
-                        "TotalCOGS": total_cogs_daily,
-                        "RetailSalesEstimateTotal": retail_sales_est,
-                        "EstimatedGrossProfitTotal": est_gp,
-                        "ActualSalesTotal": actual_sales_daily,
-                        "ActualGrossProfitTotal": actual_gp,
-                        "CreditCardFeesTotal": cc_fees_daily,
-                        "NetInsideProfitTotal": net_inside_daily,
-                        "CoverageUnitsPct": coverage_units_pct_daily,
-                        "MissingSkuCount": missing_count,
-                    }])
+                        row_to_save = pd.DataFrame([{
+                            "Date": selected_date,
+                            "TotalUnits": total_units_daily,
+                            "TotalCOGS": total_cogs_daily,
+                            "RetailSalesEstimateTotal": retail_sales_est,
+                            "EstimatedGrossProfitTotal": est_gp,
+                            "ActualSalesTotal": actual_sales_daily,
+                            "ActualGrossProfitTotal": actual_gp,
+                            "CreditCardFeesTotal": cc_fees_daily,
+                            "NetInsideProfitTotal": net_inside_daily,
+                            "CoverageUnitsPct": coverage_units_pct_daily,
+                            "MissingSkuCount": missing_count,
+                        }])
 
-                    save_inside_daily_totals(row_to_save)
-                    st.success(f"Saved inside totals for {selected_date}")
+                        save_inside_daily_totals(row_to_save)
+                        st.success(f"Saved inside totals for {selected_date}")
 
-                # --- Save to Store Profit ---
-                st.subheader("Save to Store Profit")
-                st.caption("Writes Inside Sales/COGS for the selected date into Store Profit (Day + Month).")
-                if st.button("Save Day to Store Profit"):
-                    daily_all = merged[merged["DateSold"] == selected_date]
-                    inside_sales_daily = float(daily_all["ActualSales"].sum())
-                    inside_cogs_daily = float(daily_all["COGS"].sum())
-                    inside_cc_fees_daily = float(daily_all["CreditCardFees"].sum())
-                    daily_matched = matched_items[matched_items["DateSold"] == selected_date] if not matched_items.empty else pd.DataFrame()
-                    total_units_daily = daily_all["Quantity"].sum()
-                    matched_units_daily = daily_matched["Quantity"].sum() if not daily_matched.empty else 0
-                    coverage_units_pct_daily = (matched_units_daily / total_units_daily * 100) if total_units_daily > 0 else 0
-                    notes = f"From ProductReportExport (coverage {coverage_units_pct_daily:.1f}%). CC fees at {inside_cc_fee_rate:.4f}."
+                        # --- Save to Store Profit ---
+                        inside_sales_daily = float(daily_all["ActualSales"].sum())
+                        inside_cogs_daily = float(daily_all["COGS"].sum())
+                        inside_cc_fees_daily = float(daily_all["CreditCardFees"].sum())
+                        notes = f"From ProductReportExport (coverage {coverage_units_pct_daily:.1f}%). CC fees at {inside_cc_fee_rate:.4f}."
 
-                    store_daily = load_store_daily()
-                    store_daily["Date"] = pd.to_datetime(store_daily["Date"], errors="coerce")
-                    new_row = pd.DataFrame([{
-                        "Date": pd.to_datetime(selected_date),
-                        "InsideSales": inside_sales_daily,
-                        "InsideCOGS": inside_cogs_daily,
-                        "OtherVariableCosts": inside_cc_fees_daily,
-                        "Notes": notes,
-                    }])
-                    # Upsert by date
-                    store_daily = store_daily[store_daily["Date"].dt.date != selected_date]
-                    store_daily = pd.concat([store_daily, new_row], ignore_index=True).sort_values("Date")
-                    save_store_daily(store_daily)
-                    st.success(f"Saved Store Profit day for {selected_date}")
+                        store_daily = load_store_daily()
+                        store_daily["Date"] = pd.to_datetime(store_daily["Date"], errors="coerce")
+                        new_row = pd.DataFrame([{
+                            "Date": pd.to_datetime(selected_date),
+                            "InsideSales": inside_sales_daily,
+                            "InsideCOGS": inside_cogs_daily,
+                            "OtherVariableCosts": inside_cc_fees_daily,
+                            "Notes": notes,
+                        }])
+                        # Upsert by date
+                        store_daily = store_daily[store_daily["Date"].dt.date != selected_date]
+                        store_daily = pd.concat([store_daily, new_row], ignore_index=True).sort_values("Date")
+                        save_store_daily(store_daily)
+                        st.success(f"Saved Store Profit day for {selected_date}")
+                    except Exception as e:
+                        st.error(f"Error saving: {e}")
         except Exception as e:
             st.error(f"Error processing product report: {e}")
             st.caption("If you can, share the column list from the POS export or a tiny redacted sample.")
+
+# ============================================================
+# Page: Invoices
+# ============================================================
+
+elif page == "Invoices":
+    st.header("Invoices")
+    st.caption("Log invoices for new products. These totals are applied to the daily profit summary.")
+
+    invoices = load_invoices()
+    invoices["Date"] = pd.to_datetime(invoices["Date"], errors="coerce")
+
+    c1, c2, c3 = st.columns([1.2, 1.6, 1])
+    with c1:
+        inv_date = st.date_input("Invoice Date", value=date.today(), key="invoice_date")
+    with c2:
+        inv_vendor = st.text_input("Vendor", key="invoice_vendor")
+    with c3:
+        inv_amount = st.number_input("Amount ($)", min_value=0.0, value=0.0, step=10.0, format="%.2f", key="invoice_amount")
+
+    inv_notes = st.text_input("Notes (optional)", key="invoice_notes")
+
+    if st.button("Add invoice"):
+        new_row = pd.DataFrame([{
+            "Date": pd.to_datetime(inv_date),
+            "Vendor": inv_vendor.strip(),
+            "Amount": float(inv_amount),
+            "Notes": inv_notes.strip(),
+        }])
+        full = pd.concat([invoices, new_row], ignore_index=True)
+        save_invoices(full)
+        st.success(f"Saved invoice for {inv_date}.")
+        st.rerun()
+
+    st.subheader("Invoice history")
+    if invoices.empty:
+        st.info("No invoices logged yet.")
+    else:
+        view = invoices.copy()
+        view["Date"] = pd.to_datetime(view["Date"], errors="coerce").dt.date
+        view["Amount"] = pd.to_numeric(view["Amount"], errors="coerce").fillna(0.0).map(fmt_currency)
+        st.dataframe(view.drop(columns=["Notes"], errors="ignore").sort_values("Date", ascending=False), use_container_width=True)
+
+        del_date = st.selectbox("Delete a day of invoices", sorted(view["Date"].unique()), key="invoice_delete_date")
+        if st.button("Delete all invoices for selected day"):
+            full = load_invoices()
+            full["Date"] = pd.to_datetime(full["Date"], errors="coerce")
+            full = full[full["Date"].dt.date != del_date]
+            save_invoices(full)
+            st.success(f"Deleted invoices for {del_date}.")
+            st.rerun()
 
 # ============================================================
 # Page: Store Profit (Day + Month)
@@ -1971,43 +2273,63 @@ else:
     store_month2 = store_month2[(pd.to_datetime(store_month2["Date"]) >= start) & (pd.to_datetime(store_month2["Date"]) <= end)].copy()
 
     if not store_month2.empty:
-        store_month2["InsideProfit"] = (
+        store_month2["NetInsideProfit"] = (
             pd.to_numeric(store_month2["InsideSales"], errors="coerce").fillna(0.0)
             - pd.to_numeric(store_month2["InsideCOGS"], errors="coerce").fillna(0.0)
             - pd.to_numeric(store_month2["OtherVariableCosts"], errors="coerce").fillna(0.0)
         )
     else:
-        store_month2 = pd.DataFrame(columns=["Date", "InsideProfit"])
+        store_month2 = pd.DataFrame(columns=["Date", "NetInsideProfit"])
 
-    daily = daily.merge(store_month2[["Date", "InsideProfit"]], on="Date", how="left")
+    daily = daily.merge(store_month2[["Date", "NetInsideProfit"]], on="Date", how="left")
 
     daily["NetFuelProfit"] = pd.to_numeric(daily["NetFuelProfit"], errors="coerce").fillna(0.0)
-    daily["InsideProfit"] = pd.to_numeric(daily["InsideProfit"], errors="coerce").fillna(0.0)
+    daily["NetInsideProfit"] = pd.to_numeric(daily["NetInsideProfit"], errors="coerce").fillna(0.0)
+
+    # Invoices (variable cost)
+    invoices_month = load_invoices()
+    invoices_month["Date"] = pd.to_datetime(invoices_month["Date"], errors="coerce").dt.date
+    invoices_month = invoices_month[(pd.to_datetime(invoices_month["Date"]) >= start) & (pd.to_datetime(invoices_month["Date"]) <= end)].copy()
+    if not invoices_month.empty:
+        invoices_daily = invoices_month.groupby("Date", as_index=False).agg(DailyInvoices=("Amount", "sum"))
+    else:
+        invoices_daily = pd.DataFrame(columns=["Date", "DailyInvoices"])
+    daily = daily.merge(invoices_daily, on="Date", how="left")
+    daily["DailyInvoices"] = pd.to_numeric(daily.get("DailyInvoices", 0.0), errors="coerce").fillna(0.0)
 
     # Allocate fixed costs evenly across days in month
     days_in_month = len(days)
     daily["FixedCostAllocated"] = fixed_total / days_in_month if days_in_month else 0.0
 
-    daily["TotalProfit"] = daily["NetFuelProfit"] + daily["InsideProfit"]
-    daily["TotalDailyStationProfit"] = daily["NetFuelProfit"] + daily["InsideProfit"] - daily["FixedCostAllocated"]
+    daily["TotalProfit"] = daily["NetFuelProfit"] + daily["NetInsideProfit"]
+    daily["NetDailyProfit"] = (
+        daily["NetFuelProfit"]
+        + daily["NetInsideProfit"]
+        - daily["DailyInvoices"]
+        - daily["FixedCostAllocated"]
+    )
 
     # Display
     show = daily.copy()
+    show["Date"] = pd.to_datetime(show["Date"]).dt.strftime("%m-%d-%Y")
     show["NetFuelProfit"] = show["NetFuelProfit"].map(fmt_currency)
-    show["InsideProfit"] = show["InsideProfit"].map(fmt_currency)
+    show["NetInsideProfit"] = show["NetInsideProfit"].map(fmt_currency)
     show["TotalProfit"] = show["TotalProfit"].map(fmt_currency)
+    show["DailyInvoices"] = show["DailyInvoices"].map(fmt_currency)
     show["FixedCostAllocated"] = show["FixedCostAllocated"].map(fmt_currency)
-    show["TotalDailyStationProfit"] = show["TotalDailyStationProfit"].map(fmt_currency)
+    show["NetDailyProfit"] = show["NetDailyProfit"].map(fmt_currency)
 
     st.dataframe(show, use_container_width=True)
 
     # Month totals
     month_fuel = float(daily["NetFuelProfit"].replace("", 0).apply(lambda x: float(str(x).replace("$","").replace(",","")) if isinstance(x,str) else 0).sum()) if False else float(daily["NetFuelProfit"].astype(float).sum())
-    month_inside = float(daily["InsideProfit"].astype(float).sum())
-    month_station = float(daily["TotalDailyStationProfit"].astype(float).sum())
+    month_inside = float(daily["NetInsideProfit"].astype(float).sum())
+    month_invoices = float(daily["DailyInvoices"].astype(float).sum())
+    month_station = float(daily["NetDailyProfit"].astype(float).sum())
 
-    m1, m2, m3, m4 = st.columns(4)
+    m1, m2, m3, m4, m5 = st.columns(5)
     m1.metric("Fuel profit (month)", fmt_currency(month_fuel))
     m2.metric("Inside profit (month)", fmt_currency(month_inside))
-    m3.metric("Fixed costs (month)", fmt_currency(fixed_total))
-    m4.metric("Total station profit (month)", fmt_currency(month_station))
+    m3.metric("Invoices (month)", fmt_currency(month_invoices))
+    m4.metric("Fixed costs (month)", fmt_currency(fixed_total))
+    m5.metric("Total station profit (month)", fmt_currency(month_station))
