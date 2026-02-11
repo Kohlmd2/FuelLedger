@@ -2143,11 +2143,21 @@ elif page == "Invoices":
     invoices = load_invoices()
     invoices["Date"] = pd.to_datetime(invoices["Date"], errors="coerce")
 
+    st.subheader("Add New Invoices")
+
+    vendor_options = (
+        vendors_edit.get("Vendor", pd.Series([], dtype=str))
+        .astype(str)
+        .str.strip()
+        .replace({"nan": ""})
+    )
+    vendor_options = sorted([v for v in vendor_options if v])
+
     c1, c2, c3 = st.columns([1.2, 1.6, 1])
     with c1:
         inv_date = st.date_input("Invoice Date", value=date.today(), key="invoice_date")
     with c2:
-        inv_vendor = st.text_input("Vendor", key="invoice_vendor")
+        inv_vendor = st.selectbox("Vendor", options=vendor_options, key="invoice_vendor") if vendor_options else st.text_input("Vendor", key="invoice_vendor")
     with c3:
         inv_amount = st.number_input("Amount ($)", min_value=0.0, value=0.0, step=10.0, format="%.2f", key="invoice_amount")
 
