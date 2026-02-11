@@ -28,22 +28,6 @@ except Exception:
 st.set_page_config(page_title="Fuel Profit Tracker", layout="wide")
 
 # Sidebar layout: top navigation, bottom user controls
-st.markdown(
-    """
-    <style>
-        section[data-testid="stSidebar"] [data-testid="stSidebarContent"] > div:first-child {
-            display: flex;
-            flex-direction: column;
-            min-height: 100vh;
-        }
-        .sidebar-bottom {
-            margin-top: auto;
-            padding-bottom: 1rem;
-        }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
 
 DATA_DIR = Path(".fuel_profit_data")
 DATA_DIR.mkdir(exist_ok=True)
@@ -915,8 +899,6 @@ page = st.sidebar.radio(
     index=0,
 )
 
-st.sidebar.markdown('<div class="sidebar-bottom">', unsafe_allow_html=True)
-
 if st.session_state.get("is_admin"):
     with st.sidebar.expander("Admin: Create user"):
         with st.form("admin_create_user"):
@@ -949,7 +931,6 @@ if st.sidebar.button("Log out"):
     st.rerun()
 
 st.sidebar.markdown(f"**Signed in as:** `{st.session_state.get('username')}`")
-st.sidebar.markdown("</div>", unsafe_allow_html=True)
 
 # ============================================================
 # Page: Fuel Calculator
