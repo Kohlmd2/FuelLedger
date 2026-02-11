@@ -658,6 +658,7 @@ def load_invoice_vendors() -> pd.DataFrame:
             "ContactPerson",
             "ContactPhone",
             "ContactEmail",
+            "Order",
             "OrderDay",
             "DeliveryDay",
             "Notes",
@@ -666,12 +667,15 @@ def load_invoice_vendors() -> pd.DataFrame:
         if col not in df.columns:
             df[col] = ""
         df[col] = df[col].astype(str)
+    if "Order" not in df.columns:
+        df["Order"] = ""
+    df["Order"] = df["Order"].astype(str)
     return df
 
 
 def save_invoice_vendors(df: pd.DataFrame) -> None:
     out = df.copy()
-    for col in ["Vendor", "ContactPerson", "ContactPhone", "ContactEmail", "OrderDay", "DeliveryDay", "Notes"]:
+    for col in ["Vendor", "ContactPerson", "ContactPhone", "ContactEmail", "Order", "OrderDay", "DeliveryDay", "Notes"]:
         if col not in out.columns:
             out[col] = ""
         out[col] = out[col].astype(str)
@@ -680,6 +684,7 @@ def save_invoice_vendors(df: pd.DataFrame) -> None:
         "ContactPerson",
         "ContactPhone",
         "ContactEmail",
+        "Order",
         "OrderDay",
         "DeliveryDay",
         "Notes",
@@ -2118,6 +2123,11 @@ elif page == "Invoices":
             "ContactPerson": st.column_config.TextColumn("Contact Person"),
             "ContactPhone": st.column_config.TextColumn("Contact Phone"),
             "ContactEmail": st.column_config.TextColumn("Contact Email"),
+            "Order": st.column_config.SelectboxColumn(
+                "Order",
+                options=["Online", "Call", "Rep In Store"],
+                help="Preferred order method.",
+            ),
             "OrderDay": st.column_config.TextColumn("Order Day"),
             "DeliveryDay": st.column_config.TextColumn("Delivery Day"),
             "Notes": st.column_config.TextColumn("Notes"),
