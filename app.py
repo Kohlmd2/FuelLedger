@@ -2276,6 +2276,12 @@ elif page == "Inventory":
         if inventory.empty:
             st.info("No inventory items yet. Add items in the 'Add/Update Stock' tab.")
         else:
+            total_value = (
+                pd.to_numeric(inventory["Quantity"], errors="coerce").fillna(0.0)
+                * pd.to_numeric(inventory["UnitCost"], errors="coerce").fillna(0.0)
+            ).sum()
+            st.metric("Total Inventory Value", fmt_currency(total_value))
+
             view = inventory.copy()
             view["LastUpdated"] = pd.to_datetime(view["LastUpdated"], errors="coerce").dt.strftime("%m-%d-%Y")
             view["Quantity"] = view["Quantity"].map(fmt_number)
@@ -2286,12 +2292,6 @@ elif page == "Inventory":
             ).map(fmt_currency)
             
             st.dataframe(view[["SKU", "Name", "Quantity", "UnitCost", "TotalValue", "LastUpdated"]], use_container_width=True)
-            
-            total_value = (
-                pd.to_numeric(inventory["Quantity"], errors="coerce").fillna(0.0)
-                * pd.to_numeric(inventory["UnitCost"], errors="coerce").fillna(0.0)
-            ).sum()
-            st.metric("Total Inventory Value", fmt_currency(total_value))
 
     with tab2:
         st.subheader("Add or Update Inventory")
