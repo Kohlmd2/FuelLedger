@@ -649,6 +649,43 @@ def save_invoices(df: pd.DataFrame) -> None:
         out["Notes"] = ""
     _save_csv(user_data_file("invoices.csv"), out)
 
+
+def load_invoice_vendors() -> pd.DataFrame:
+    df = _load_csv(user_data_file("invoice_vendors.csv"))
+    if df.empty:
+        return pd.DataFrame(columns=[
+            "Vendor",
+            "ContactPerson",
+            "ContactPhone",
+            "ContactEmail",
+            "OrderDay",
+            "DeliveryDay",
+            "Notes",
+        ])
+    for col in ["Vendor", "ContactPerson", "ContactPhone", "ContactEmail", "OrderDay", "DeliveryDay", "Notes"]:
+        if col not in df.columns:
+            df[col] = ""
+        df[col] = df[col].astype(str)
+    return df
+
+
+def save_invoice_vendors(df: pd.DataFrame) -> None:
+    out = df.copy()
+    for col in ["Vendor", "ContactPerson", "ContactPhone", "ContactEmail", "OrderDay", "DeliveryDay", "Notes"]:
+        if col not in out.columns:
+            out[col] = ""
+        out[col] = out[col].astype(str)
+    out = out[[
+        "Vendor",
+        "ContactPerson",
+        "ContactPhone",
+        "ContactEmail",
+        "OrderDay",
+        "DeliveryDay",
+        "Notes",
+    ]]
+    _save_csv(user_data_file("invoice_vendors.csv"), out)
+
 # ============================================================
 # Price Book helpers
 # ============================================================
@@ -2067,6 +2104,31 @@ elif page == "Inside COGS Calculator":
 elif page == "Invoices":
     st.header("Invoices")
     st.caption("Log invoices for new products. These totals are applied to the daily profit summary.")
+
+    st.subheader("Vendor directory")
+    st.caption("Keep vendor contact info and ordering schedules here.")
+
+    vendors = load_invoice_vendors()
+    vendors_edit = st.data_editor(
+        vendors,
+        num_rows="dynamic",
+        use_container_width=True,
+        column_config={
+            "Vendor": st.column_config.TextColumn("Vendor"),
+            "ContactPerson": st.column_config.TextColumn("Contact Person"),
+            "ContactPhone": st.column_config.TextColumn("Contact Phone"),
+            "ContactEmail": st.column_config.TextColumn("Contact Email"),
+            "OrderDay": st.column_config.TextColumn("Order Day"),
+            "DeliveryDay": st.column_config.TextColumn("Delivery Day"),
+            "Notes": st.column_config.TextColumn("Notes"),
+        },
+    )
+    if st.button("Save vendors"):
+        save_invoice_vendors(vendors_edit)
+        st.success("Vendors saved.")
+        st.rerun()
+
+    st.divider()
 
     invoices = load_invoices()
     invoices["Date"] = pd.to_datetime(invoices["Date"], errors="coerce")
