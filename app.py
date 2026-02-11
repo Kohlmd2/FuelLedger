@@ -1801,8 +1801,8 @@ elif page == "Inside COGS Calculator":
                 )
                 agg["ActualSales"] = agg["ActualSales"].fillna(0.0)
 
-                # Merge with price book on SKU (from session_state), using explicit suffixes
-                current_pb_for_merge = st.session_state.get("pricebook_df", pd.DataFrame()).copy()
+                # Merge with price book on SKU (from Inventory price book), using explicit suffixes
+                current_pb_for_merge = current_pb.copy()
                 if "SKU" not in current_pb_for_merge.columns and "Sku" in current_pb_for_merge.columns:
                     current_pb_for_merge = current_pb_for_merge.rename(columns={"Sku": "SKU"})
                 if current_pb_for_merge.empty and "SKU" not in current_pb_for_merge.columns:
