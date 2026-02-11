@@ -27,6 +27,23 @@ except Exception:
 # ============================================================
 st.set_page_config(page_title="Fuel Profit Tracker", layout="wide")
 
+# Sidebar layout: top navigation, bottom user controls
+st.markdown(
+    """
+    <style>
+        section[data-testid="stSidebar"] > div:first-child {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+        .sidebar-spacer {
+            flex: 1 1 auto;
+        }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 DATA_DIR = Path(".fuel_profit_data")
 DATA_DIR.mkdir(exist_ok=True)
 
@@ -881,19 +898,14 @@ def month_days(month_str: str) -> int:
 require_login()
 migrate_legacy_data_if_present()
 
-st.sidebar.markdown(f"**Signed in as:** `{st.session_state.get('username')}`")
-if st.sidebar.button("Log out"):
-    for k in [
-        "user_id",
-        "username",
-        "is_admin",
-        "pricebook_df",
-        "pricebook_loaded_at",
-        "fixed_costs_df",
-        "fixed_costs_month",
-    ]:
-        st.session_state.pop(k, None)
-    st.rerun()
+st.sidebar.title("Navigation")
+page = st.sidebar.radio(
+    "Go to",
+    ["Fuel Calculator", "Tank Deliveries", "Inside COGS Calculator", "Daily Totals History", "Invoices", "Store Profit (Day + Month)"],
+    index=0,
+)
+
+st.sidebar.markdown('<div class="sidebar-spacer"></div>', unsafe_allow_html=True)
 
 if st.session_state.get("is_admin"):
     with st.sidebar.expander("Admin: Create user"):
@@ -913,12 +925,20 @@ if st.session_state.get("is_admin"):
                 else:
                     st.error(msg)
 
-st.sidebar.title("Navigation")
-page = st.sidebar.radio(
-    "Go to",
-    ["Fuel Calculator", "Tank Deliveries", "Inside COGS Calculator", "Daily Totals History", "Invoices", "Store Profit (Day + Month)"],
-    index=0,
-)
+if st.sidebar.button("Log out"):
+    for k in [
+        "user_id",
+        "username",
+        "is_admin",
+        "pricebook_df",
+        "pricebook_loaded_at",
+        "fixed_costs_df",
+        "fixed_costs_month",
+    ]:
+        st.session_state.pop(k, None)
+    st.rerun()
+
+st.sidebar.markdown(f"**Signed in as:** `{st.session_state.get('username')}`")
 
 # ============================================================
 # Page: Fuel Calculator
