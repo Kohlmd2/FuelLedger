@@ -2313,6 +2313,13 @@ elif page == "Inventory":
         if inventory.empty:
             st.info("No inventory items yet. Add items in the 'Add/Update Stock' tab.")
         else:
+            sort_col = st.selectbox(
+                "Sort by",
+                ["SKU", "Name", "Quantity", "UnitCost", "TotalValue", "LastUpdated"],
+                index=0,
+            )
+            sort_dir = st.radio("Order", ["Ascending", "Descending"], horizontal=True, index=0)
+
             total_value = (
                 pd.to_numeric(inventory["Quantity"], errors="coerce").fillna(0.0)
                 * pd.to_numeric(inventory["UnitCost"], errors="coerce").fillna(0.0)
@@ -2320,15 +2327,21 @@ elif page == "Inventory":
             st.metric("Total Inventory Value", fmt_currency(total_value))
 
             view = inventory.copy()
-            view["LastUpdated"] = pd.to_datetime(view["LastUpdated"], errors="coerce").dt.strftime("%m-%d-%Y")
-            view["Quantity"] = view["Quantity"].map(fmt_number)
-            view["UnitCost"] = view["UnitCost"].map(fmt_currency)
-            view["TotalValue"] = (
-                pd.to_numeric(inventory["Quantity"], errors="coerce").fillna(0.0)
-                * pd.to_numeric(inventory["UnitCost"], errors="coerce").fillna(0.0)
-            ).map(fmt_currency)
-            
-            st.dataframe(view[["SKU", "Name", "Quantity", "UnitCost", "TotalValue", "LastUpdated"]], use_container_width=True)
+            view["LastUpdated"] = pd.to_datetime(view["LastUpdated"], errors="coerce")
+            view["Quantity"] = pd.to_numeric(view["Quantity"], errors="coerce").fillna(0.0)
+            view["UnitCost"] = pd.to_numeric(view["UnitCost"], errors="coerce").fillna(0.0)
+            view["TotalValue"] = view["Quantity"] * view["UnitCost"]
+
+            display = view[["SKU", "Name", "Quantity", "UnitCost", "TotalValue", "LastUpdated"]].copy()
+            ascending = sort_dir == "Ascending"
+            if sort_col in display.columns:
+                display = display.sort_values(sort_col, ascending=ascending, kind="mergesort")
+
+            display["LastUpdated"] = display["LastUpdated"].dt.strftime("%m-%d-%Y")
+            display["Quantity"] = display["Quantity"].map(fmt_number)
+            display["UnitCost"] = display["UnitCost"].map(fmt_currency)
+            display["TotalValue"] = display["TotalValue"].map(fmt_currency)
+            st.dataframe(display, use_container_width=True)
 
     with tab2:
         st.subheader("Add or Update Inventory")
