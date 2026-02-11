@@ -2180,9 +2180,27 @@ elif page == "Invoices":
         st.info("No invoices logged yet.")
     else:
         view = invoices.copy()
-        view["Date"] = pd.to_datetime(view["Date"], errors="coerce").dt.date
-        view["Amount"] = pd.to_numeric(view["Amount"], errors="coerce").fillna(0.0).map(fmt_currency)
-        st.dataframe(view.drop(columns=["Notes"], errors="ignore").sort_values("Date", ascending=False), use_container_width=True)
+        view["Date"] = pd.to_datetime(view["Date"], errors="coerce")
+        view["Vendor"] = view["Vendor"].astype(str)
+        view["Amount"] = pd.to_numeric(view["Amount"], errors="coerce").fillna(0.0)
+        view["Notes"] = view.get("Notes", "").astype(str)
+        view = view.sort_values("Date", ascending=False)
+
+        edited_invoices = st.data_editor(
+            view,
+            num_rows="dynamic",
+            use_container_width=True,
+            column_config={
+                "Date": st.column_config.DateColumn("Date"),
+                "Vendor": st.column_config.TextColumn("Vendor"),
+                "Amount": st.column_config.NumberColumn("Amount", format="%.2f"),
+                "Notes": st.column_config.TextColumn("Notes"),
+            },
+        )
+        if st.button("Save invoice changes"):
+            save_invoices(edited_invoices)
+            st.success("Invoice history updated.")
+            st.rerun()
 
         del_date = st.selectbox("Delete a day of invoices", sorted(view["Date"].unique()), key="invoice_delete_date")
         if st.button("Delete all invoices for selected day"):
