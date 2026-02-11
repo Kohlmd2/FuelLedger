@@ -2128,8 +2128,14 @@ elif page == "Invoices":
                 options=["Online", "Call", "Rep In Store"],
                 help="Preferred order method.",
             ),
-            "OrderDay": st.column_config.TextColumn("Order Day"),
-            "DeliveryDay": st.column_config.TextColumn("Delivery Day"),
+            "OrderDay": st.column_config.SelectboxColumn(
+                "Order Day",
+                options=["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday", "Next Day"],
+            ),
+            "DeliveryDay": st.column_config.SelectboxColumn(
+                "Delivery Day",
+                options=["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday", "Next Day"],
+            ),
             "Notes": st.column_config.TextColumn("Notes"),
         },
     )
