@@ -2189,9 +2189,9 @@ elif page == "Invoices":
     else:
         view = invoices.copy()
         view["Date"] = pd.to_datetime(view["Date"], errors="coerce")
-    view["Vendor"] = view["Vendor"].fillna("").astype(str)
-    view["Amount"] = pd.to_numeric(view["Amount"], errors="coerce").fillna(0.0)
-    view["Notes"] = view.get("Notes", "").fillna("").astype(str)
+        view["Vendor"] = view["Vendor"].fillna("").astype(str)
+        view["Amount"] = pd.to_numeric(view["Amount"], errors="coerce").fillna(0.0)
+        view["Notes"] = view.get("Notes", "").fillna("").astype(str)
         view = view.sort_values("Date", ascending=False)
 
         edited_invoices = st.data_editor(
