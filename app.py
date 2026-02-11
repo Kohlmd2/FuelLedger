@@ -2302,33 +2302,34 @@ elif page == "Inventory":
         else:
             st.info(f"Price book loaded: {len(pricebook)} SKUs available")
         
+        def _inv_lookup():
+            sku_val = st.session_state.get("inv_sku_input", "").strip()
+            if not sku_val:
+                st.warning("Please enter a SKU/UPC first")
+                return
+            search_sku = normalize_sku(sku_val)
+            match = pricebook[pricebook["SKU"] == search_sku]
+            if match.empty:
+                st.error(f"SKU '{search_sku}' not found in Price Book")
+                return
+            current_inv = inventory[inventory["SKU"] == search_sku]
+            current_qty = current_inv.iloc[0]["Quantity"] if not current_inv.empty else 0.0
+            st.session_state["inv_name"] = match.iloc[0]["Name"]
+            st.session_state["inv_cost"] = float(match.iloc[0]["UnitCost"])
+            st.session_state["inv_qty"] = float(current_qty)
+            st.session_state["inv_sku_input"] = search_sku
+            st.session_state["inv_lookup_msg"] = f"✓ Found: {match.iloc[0]['Name']} (Current stock: {current_qty})"
+
         col1, col2 = st.columns([3, 1])
         with col1:
             sku_input = st.text_input("SKU/UPC", key="inv_sku_input")
         with col2:
             st.write("")  # Spacer for alignment
             st.write("")  # Spacer for alignment
-            if st.button("Look up", key="inv_lookup_btn"):
-                if sku_input.strip():
-                    # Normalize SKU for comparison
-                    search_sku = normalize_sku(sku_input.strip())
-                    match = pricebook[pricebook["SKU"] == search_sku]
-                    if not match.empty:
-                        # Get current inventory quantity if it exists
-                        current_inv = inventory[inventory["SKU"] == search_sku]
-                        current_qty = current_inv.iloc[0]["Quantity"] if not current_inv.empty else 0.0
-                        
-                        # Store directly in widget keys for auto-population
-                        st.session_state["inv_sku_input"] = search_sku
-                        st.session_state["inv_name"] = match.iloc[0]["Name"]
-                        st.session_state["inv_cost"] = float(match.iloc[0]["UnitCost"])
-                        st.session_state["inv_qty"] = float(current_qty)
-                        st.success(f"✓ Found: {match.iloc[0]['Name']} (Current stock: {current_qty})")
-                        st.rerun()  # Rerun to populate fields
-                    else:
-                        st.error(f"SKU '{search_sku}' not found in Price Book")
-                else:
-                    st.warning("Please enter a SKU/UPC first")
+            st.button("Look up", key="inv_lookup_btn", on_click=_inv_lookup)
+
+        if st.session_state.get("inv_lookup_msg"):
+            st.success(st.session_state["inv_lookup_msg"])
 
         name_input = st.text_input("Product Name", key="inv_name")
         
@@ -2410,22 +2411,29 @@ elif page == "Inventory":
         with col2:
             del_vendor = st.selectbox("Vendor", options=vendor_list, key="inv_del_vendor") if vendor_list else st.text_input("Vendor", key="inv_del_vendor")
 
+        def _inv_del_lookup():
+            sku_val = st.session_state.get("inv_del_sku", "").strip()
+            if not sku_val:
+                st.warning("Please enter a SKU/UPC first")
+                return
+            search_sku = normalize_sku(sku_val)
+            match = pricebook[pricebook["SKU"] == search_sku]
+            if match.empty:
+                st.warning("SKU not found")
+                return
+            st.session_state["inv_del_sku"] = search_sku
+            st.session_state["inv_del_name_input"] = match.iloc[0]["Name"]
+            st.session_state["inv_del_cost_input"] = float(match.iloc[0]["UnitCost"])
+            st.session_state["inv_del_lookup_msg"] = f"Found: {match.iloc[0]['Name']}"
+
         col3, col4 = st.columns(2)
         with col3:
             del_sku = st.text_input("SKU/UPC", key="inv_del_sku")
         with col4:
-            if st.button("Look up", key="inv_del_lookup"):
-                if del_sku.strip():
-                    search_sku = normalize_sku(del_sku.strip())
-                    match = pricebook[pricebook["SKU"] == search_sku]
-                    if not match.empty:
-                        st.session_state["inv_del_sku"] = search_sku
-                        st.session_state["inv_del_name_input"] = match.iloc[0]["Name"]
-                        st.session_state["inv_del_cost_input"] = float(match.iloc[0]["UnitCost"])
-                        st.success(f"Found: {match.iloc[0]['Name']}")
-                        st.rerun()
-                    else:
-                        st.warning("SKU not found")
+            st.button("Look up", key="inv_del_lookup", on_click=_inv_del_lookup)
+
+        if st.session_state.get("inv_del_lookup_msg"):
+            st.success(st.session_state["inv_del_lookup_msg"])
 
         del_name = st.text_input("Product Name", key="inv_del_name_input")
         
