@@ -1,0 +1,29 @@
+Section,Name,Purpose,Columns/Details
+Tool,streamlit,UI framework,Pages/forms/inputs/layout
+Tool,pandas,Data processing,CSV I/O, aggregation, joins
+Tool,numpy,Numeric ops,Vectorized calculations
+Tool,sqlite3,Local auth DB,auth.db users table
+Tool,pathlib.Path,File paths,Local storage paths
+Tool,calendar,Month length,Fixed cost allocation
+Tool,datetime/date,Date handling,Normalization and filters
+Tool,hashlib,Password hashing,PBKDF2
+Tool,hmac,Secure compare,Constant-time hash compare
+Tool,secrets,Salt generation,Cryptographic salts
+Tool,re,Input normalization,Username cleaning
+Tool,st_aggrid (optional),Grid UI,Persistent column widths
+CSV,daily_totals_history.csv,Fuel profit history,Date; TotalGallons; ExpectedRevenue; POSRevenue; COGS; GrossProfit; CreditCardFees; NetFuelProfit
+CSV,last_posted_prices.csv,Last posted prices,Grade; CashPrice; CreditPrice
+CSV,fixed_costs.csv,Monthly fixed costs,Month; Category; Amount
+CSV,tank_baseline.csv,Tank baseline,Grade; StartingGallons; StartingAvgCost; BaselineDate
+CSV,tank_deliveries.csv,Delivery log,Date; Grade; GallonsDelivered; PricePerGallon; Notes
+CSV,pricebook_current.csv,Price book,SKU; Name; RetailPrice; UnitCost
+CSV,inside_daily_totals_history.csv,Inside-store totals,Date; TotalUnits; TotalCOGS; RetailSalesEstimateTotal; EstimatedGrossProfitTotal; ActualSalesTotal; ActualGrossProfitTotal; CreditCardFeesTotal; NetInsideProfitTotal; CoverageUnitsPct; MissingSkuCount
+CSV,store_daily.csv,Inside-store daily,Date; InsideSales; InsideCOGS; OtherVariableCosts; Notes
+CSV,invoices.csv,Invoices,Date; Vendor; Amount; Notes
+CSV,invoice_vendors.csv,Vendor directory,Vendor; ContactPerson; ContactPhone; ContactEmail; Order; OrderDay; DeliveryDay; Notes
+Page,Fuel Calculator,Upload POS CSV and compute fuel profit,As-of pricing; 89 blend; Save history
+Page,Tank Deliveries,Track fuel deliveries,Baseline + delivery log
+Page,Inside COGS Calculator,Compute inside COGS & profit,Price book + product report; matching; save totals
+Page,Daily Totals History,View fuel & inside history,Download/reset fuel; manual inside days
+Page,Invoices,Manage vendor directory and invoices,Auto-save vendors; invoice log/edit
+Page,Store Profit (Day + Month),Combine profits and costs,DailyInvoices + fixed costs; monthly summary

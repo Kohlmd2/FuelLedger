@@ -40,6 +40,10 @@ st.markdown(
             padding-bottom: 1rem;
             background: inherit;
         }
+        section[data-testid="stSidebar"] .stRadio div[role="radiogroup"] label p {
+            font-size: 1.05rem;
+            font-weight: 600;
+        }
     </style>
     """,
     unsafe_allow_html=True,
@@ -673,7 +677,14 @@ def save_invoices(df: pd.DataFrame) -> None:
     out = df.copy()
     out["Date"] = pd.to_datetime(out["Date"], errors="coerce")
     out["Vendor"] = out.get("Vendor", "").astype(str)
-    out["Amount"] = pd.to_numeric(out.get("Amount", 0.0), errors="coerce").fillna(0.0)
+    amount_raw = out.get("Amount", 0.0)
+    amount_clean = (
+        amount_raw.astype(str)
+        .str.replace("$", "", regex=False)
+        .str.replace(",", "", regex=False)
+        .str.strip()
+    )
+    out["Amount"] = pd.to_numeric(amount_clean, errors="coerce").fillna(0.0)
     if "Notes" not in out.columns:
         out["Notes"] = ""
     _save_csv(user_data_file("invoices.csv"), out)
@@ -721,6 +732,64 @@ def save_invoice_vendors(df: pd.DataFrame) -> None:
         "Notes",
     ]]
     _save_csv(user_data_file("invoice_vendors.csv"), out)
+
+# -----------------------------
+# Inventory helpers
+# -----------------------------
+
+def load_inventory() -> pd.DataFrame:
+    """Load current inventory levels."""
+    df = _load_csv(user_data_file("inventory.csv"))
+    if df.empty:
+        return pd.DataFrame(columns=["SKU", "Name", "Quantity", "UnitCost", "LastUpdated"])
+    df["SKU"] = df["SKU"].astype(str).str.strip()
+    df["Name"] = df.get("Name", "").astype(str)
+    df["Quantity"] = pd.to_numeric(df.get("Quantity", 0), errors="coerce").fillna(0.0)
+    df["UnitCost"] = pd.to_numeric(df.get("UnitCost", 0), errors="coerce").fillna(0.0)
+    df["LastUpdated"] = pd.to_datetime(df.get("LastUpdated", ""), errors="coerce")
+    return df
+
+
+def save_inventory(df: pd.DataFrame) -> None:
+    """Save inventory with enforced schema."""
+    out = df.copy()
+    out["SKU"] = out["SKU"].astype(str).str.strip()
+    out["Name"] = out.get("Name", "").astype(str)
+    out["Quantity"] = pd.to_numeric(out.get("Quantity", 0), errors="coerce").fillna(0.0)
+    out["UnitCost"] = pd.to_numeric(out.get("UnitCost", 0), errors="coerce").fillna(0.0)
+    out["LastUpdated"] = pd.to_datetime(out.get("LastUpdated", datetime.now()), errors="coerce")
+    out = out[["SKU", "Name", "Quantity", "UnitCost", "LastUpdated"]].copy()
+    out = out.drop_duplicates(subset=["SKU"], keep="last")
+    _save_csv(user_data_file("inventory.csv"), out)
+
+
+def load_inventory_deliveries() -> pd.DataFrame:
+    """Load inventory delivery history."""
+    df = _load_csv(user_data_file("inventory_deliveries.csv"))
+    if df.empty:
+        return pd.DataFrame(columns=["Date", "SKU", "Name", "Quantity", "UnitCost", "Vendor", "Notes"])
+    df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+    df["SKU"] = df["SKU"].astype(str).str.strip()
+    df["Name"] = df.get("Name", "").astype(str)
+    df["Quantity"] = pd.to_numeric(df.get("Quantity", 0), errors="coerce").fillna(0.0)
+    df["UnitCost"] = pd.to_numeric(df.get("UnitCost", 0), errors="coerce").fillna(0.0)
+    df["Vendor"] = df.get("Vendor", "").astype(str)
+    df["Notes"] = df.get("Notes", "").astype(str)
+    return df
+
+
+def save_inventory_deliveries(df: pd.DataFrame) -> None:
+    """Save inventory delivery history."""
+    out = df.copy()
+    out["Date"] = pd.to_datetime(out["Date"], errors="coerce")
+    out["SKU"] = out["SKU"].astype(str).str.strip()
+    out["Name"] = out.get("Name", "").astype(str)
+    out["Quantity"] = pd.to_numeric(out.get("Quantity", 0), errors="coerce").fillna(0.0)
+    out["UnitCost"] = pd.to_numeric(out.get("UnitCost", 0), errors="coerce").fillna(0.0)
+    out["Vendor"] = out.get("Vendor", "").astype(str)
+    out["Notes"] = out.get("Notes", "").astype(str)
+    out = out[["Date", "SKU", "Name", "Quantity", "UnitCost", "Vendor", "Notes"]].copy()
+    _save_csv(user_data_file("inventory_deliveries.csv"), out)
 
 # ============================================================
 # Price Book helpers
@@ -913,7 +982,7 @@ migrate_legacy_data_if_present()
 st.sidebar.title("Navigation")
 page = st.sidebar.radio(
     "Go to",
-    ["Fuel Calculator", "Tank Deliveries", "Inside COGS Calculator", "Daily Totals History", "Invoices", "Store Profit (Day + Month)"],
+    ["Fuel Calculator", "Tank Deliveries", "Inside COGS Calculator", "Daily Totals History", "Invoices", "Inventory", "Store Profit (Day + Month)"],
     index=0,
 )
 
@@ -1552,93 +1621,20 @@ elif page == "Tank Deliveries":
 
 elif page == "Inside COGS Calculator":
     st.header("Inside COGS Calculator")
-    st.caption("Upload a price book and daily product report to calculate inside-store COGS and profit.")
+    st.caption("Upload daily product report to calculate inside-store COGS and profit. Price book is automatically loaded from Inventory.")
 
-    # --- Load price book from session_state or disk ---
-    if "pricebook_df" not in st.session_state:
-        pb_from_disk = load_pricebook()
-        if not pb_from_disk.empty:
-            st.session_state["pricebook_df"] = pb_from_disk
-            st.session_state["pricebook_loaded_at"] = None  # Loaded from disk, not this session
-    
-    current_pb = st.session_state.get("pricebook_df", pd.DataFrame())
+    # --- Load price book from Inventory page ---
+    current_pb = load_pricebook()
     pricebook_available = not current_pb.empty
 
-    # --- Price Book Management ---
-    st.subheader("1) Price Book Management")
-    st.caption("Upload a price book CSV/XLSX with SKU, Name, RetailPrice, and UnitCost columns.")
-
-    if pricebook_available:
-        st.success(f"Price book loaded: {len(current_pb)} SKUs.")
-        with st.expander("View current price book (preview)"):
-            st.dataframe(current_pb.head(20), use_container_width=True)
-    else:
-        st.info("No price book loaded yet. Upload one below to get started.")
-
-    st.markdown("**Upload a new price book to replace the current one:**")
-    pb_upload = st.file_uploader(
-        "Upload Price Book CSV/XLSX",
-        type=["csv", "xlsx"],
-        key="inside_cogs_pricebook_uploader"
-    )
-
-    if pb_upload is not None:
-        try:
-            if pb_upload.name.endswith(".xlsx"):
-                pb_raw = pd.read_excel(pb_upload, sheet_name=0)
-            else:
-                pb_raw = pd.read_csv(pb_upload)
-
-            st.info(f"Price book loaded: {pb_raw.shape[0]} rows, {pb_raw.shape[1]} columns.")
-            with st.expander("Preview: Price Book Raw Columns"):
-                st.write(list(pb_raw.columns))
-                st.dataframe(pb_raw.head(10), use_container_width=True)
-
-            # Try column-based mapping first (supports aliases)
-            pb_clean = None
-            try:
-                col_map = map_pricebook_columns(pb_raw)
-                pb_clean = pd.DataFrame({
-                    "SKU": pb_raw[col_map["Sku"]].astype(str).apply(normalize_sku),
-                    "Name": pb_raw[col_map["Name"]].astype(str),
-                    "RetailPrice": pb_raw[col_map["RetailPrice"]].apply(parse_money),
-                    "UnitCost": pb_raw[col_map["UnitCost"]].apply(parse_money),
-                })
-            except ValueError:
-                # Fallback: try position-based extraction if columns have standard names or positions
-                # Column B (index 1): Sku, Column C (index 2): Name, Column G (index 6): RetailPrice, Column H (index 7): UnitCost
-                if pb_raw.shape[1] >= 8:
-                    pb_clean = pd.DataFrame({
-                        "SKU": pb_raw.iloc[:, 1].astype(str).apply(normalize_sku),
-                        "Name": pb_raw.iloc[:, 2].astype(str),
-                        "RetailPrice": pb_raw.iloc[:, 6].apply(parse_money),
-                        "UnitCost": pb_raw.iloc[:, 7].apply(parse_money),
-                    })
-                else:
-                    st.error(
-                        "Price book columns not recognized. Supported column names:\n"
-                        "- SKU: Sku, SKU, UPC, PLU, ItemCode\n"
-                        "- Name: Name, Description, Item Name\n"
-                        "- RetailPrice: RetailPrice, Retail, Price, Sell Price\n"
-                        "- UnitCost: UnitCost, Cost, Unit Cost, Avg Cost\n\n"
-                        "Or provide 8+ columns with standard Excel layout (B=SKU, C=Name, G=Price, H=Cost)"
-                    )
-                    pb_clean = None
-
-            if pb_clean is not None:
-                pb_clean = pb_clean[pb_clean["SKU"].str.len() > 0]  # Remove empty SKUs
-                save_pricebook(pb_clean)
-                st.session_state["pricebook_df"] = pb_clean
-                st.session_state["pricebook_loaded_at"] = pd.Timestamp.now().isoformat()
-                st.success(f"Price book saved: {len(pb_clean)} SKUs")
-        except Exception as e:
-            st.error(f"Error processing price book: {e}")
-            st.caption("Tip: If the file is not a standard CSV/XLSX, export it again from your POS as a plain CSV.")
-
-    st.divider()
+    if not pricebook_available:
+        st.warning("⚠️ No price book found. Upload one in the Inventory page → Price Book tab first.")
+        st.stop()
+    
+    st.success(f"✓ Price book loaded: {len(current_pb)} SKUs from Inventory")
 
     # --- Daily Product Report Processing ---
-    st.subheader("2) Daily Product Report")
+    st.subheader("Daily Product Report")
     st.caption("Upload a ProductReportExport CSV from your POS system.")
 
     inside_cc_fee_rate = st.number_input(
@@ -1654,12 +1650,8 @@ elif page == "Inside COGS Calculator":
     product_report_upload = st.file_uploader(
         "Upload ProductReportExport CSV",
         type=["csv"],
-        key=product_upload_key,
-        disabled=not pricebook_available
+        key=product_upload_key
     )
-    if not pricebook_available:
-        st.warning("⚠️ Price book required. Upload one above first before proceeding.")
-        st.stop()
 
     # Streamlit sometimes shows a file in the widget while the value is still None.
     # Fallback to session_state and expose a reset button for debugging.
@@ -2177,14 +2169,11 @@ elif page == "Invoices":
         },
     )
 
-    # Auto-save vendor directory when it changes
     vendors_clean = vendors_edit.fillna("")
-    vendors_csv = vendors_clean.to_csv(index=False)
-    last_saved = st.session_state.get("invoice_vendors_last_saved")
-    if last_saved != vendors_csv:
+    if st.button("Save vendor changes"):
         save_invoice_vendors(vendors_clean)
-        st.session_state["invoice_vendors_last_saved"] = vendors_csv
-        st.toast("Vendors auto-saved.")
+        st.session_state["invoice_vendors_last_saved"] = vendors_clean.to_csv(index=False)
+        st.success("Vendor directory updated.")
 
     st.divider()
 
@@ -2231,18 +2220,19 @@ elif page == "Invoices":
         view = invoices.copy()
         view["Date"] = pd.to_datetime(view["Date"], errors="coerce")
         view["Vendor"] = view["Vendor"].fillna("").astype(str)
-        view["Amount"] = pd.to_numeric(view["Amount"], errors="coerce").fillna(0.0)
+        view["Amount"] = pd.to_numeric(view["Amount"], errors="coerce").fillna(0.0).map(fmt_currency)
         view["Notes"] = view.get("Notes", "").fillna("").astype(str)
         view = view.sort_values("Date", ascending=False)
+        view["Date"] = view["Date"].dt.strftime("%m-%d-%Y")
 
         edited_invoices = st.data_editor(
             view,
             num_rows="dynamic",
             use_container_width=True,
             column_config={
-                "Date": st.column_config.DateColumn("Date"),
+                "Date": st.column_config.TextColumn("Date"),
                 "Vendor": st.column_config.TextColumn("Vendor"),
-                "Amount": st.column_config.NumberColumn("Amount", format="%.2f"),
+                "Amount": st.column_config.TextColumn("Amount"),
                 "Notes": st.column_config.TextColumn("Notes"),
             },
         )
@@ -2251,7 +2241,13 @@ elif page == "Invoices":
             st.success("Invoice history updated.")
             st.rerun()
 
-        del_date = st.selectbox("Delete a day of invoices", sorted(view["Date"].unique()), key="invoice_delete_date")
+        delete_dates = sorted(pd.to_datetime(invoices["Date"], errors="coerce").dt.date.unique())
+        del_date = st.selectbox(
+            "Delete a day of invoices",
+            delete_dates,
+            key="invoice_delete_date",
+            format_func=lambda d: d.strftime("%m-%d-%Y") if pd.notna(d) else "",
+        )
         if st.button("Delete all invoices for selected day"):
             full = load_invoices()
             full["Date"] = pd.to_datetime(full["Date"], errors="coerce")
@@ -2259,6 +2255,432 @@ elif page == "Invoices":
             save_invoices(full)
             st.success(f"Deleted invoices for {del_date}.")
             st.rerun()
+
+# ============================================================
+# Page: Inventory
+# ============================================================
+
+elif page == "Inventory":
+    st.header("Inventory Management")
+    st.caption("Track product inventory levels and deliveries. Inventory is automatically deducted when product reports are uploaded.")
+
+    # Load inventory and pricebook for name/cost lookup
+    inventory = load_inventory()
+    pricebook = load_pricebook()
+
+    # Tabs for different sections
+    tab1, tab2, tab3, tab4 = st.tabs(["Current Inventory", "Add/Update Stock", "Delivery History", "Price Book"])
+
+    with tab1:
+        st.subheader("Current Inventory Levels")
+        if inventory.empty:
+            st.info("No inventory items yet. Add items in the 'Add/Update Stock' tab.")
+        else:
+            view = inventory.copy()
+            view["LastUpdated"] = pd.to_datetime(view["LastUpdated"], errors="coerce").dt.strftime("%m-%d-%Y")
+            view["Quantity"] = view["Quantity"].map(fmt_number)
+            view["UnitCost"] = view["UnitCost"].map(fmt_currency)
+            view["TotalValue"] = (
+                pd.to_numeric(inventory["Quantity"], errors="coerce").fillna(0.0)
+                * pd.to_numeric(inventory["UnitCost"], errors="coerce").fillna(0.0)
+            ).map(fmt_currency)
+            
+            st.dataframe(view[["SKU", "Name", "Quantity", "UnitCost", "TotalValue", "LastUpdated"]], use_container_width=True)
+            
+            total_value = (
+                pd.to_numeric(inventory["Quantity"], errors="coerce").fillna(0.0)
+                * pd.to_numeric(inventory["UnitCost"], errors="coerce").fillna(0.0)
+            ).sum()
+            st.metric("Total Inventory Value", fmt_currency(total_value))
+
+    with tab2:
+        st.subheader("Add or Update Inventory")
+        
+        # Debug: Show price book status
+        if pricebook.empty:
+            st.error("⚠️ Price book is empty. Upload a price book in the 'Price Book' tab first.")
+        else:
+            st.info(f"Price book loaded: {len(pricebook)} SKUs available")
+        
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            sku_input = st.text_input("SKU/UPC", key="inv_sku_input")
+        with col2:
+            st.write("")  # Spacer for alignment
+            st.write("")  # Spacer for alignment
+            if st.button("Look up", key="inv_lookup_btn"):
+                if sku_input.strip():
+                    # Normalize SKU for comparison
+                    search_sku = normalize_sku(sku_input.strip())
+                    match = pricebook[pricebook["SKU"] == search_sku]
+                    if not match.empty:
+                        # Get current inventory quantity if it exists
+                        current_inv = inventory[inventory["SKU"] == search_sku]
+                        current_qty = current_inv.iloc[0]["Quantity"] if not current_inv.empty else 0.0
+                        
+                        # Store directly in widget keys for auto-population
+                        st.session_state["inv_sku_input"] = search_sku
+                        st.session_state["inv_name"] = match.iloc[0]["Name"]
+                        st.session_state["inv_cost"] = float(match.iloc[0]["UnitCost"])
+                        st.session_state["inv_qty"] = float(current_qty)
+                        st.success(f"✓ Found: {match.iloc[0]['Name']} (Current stock: {current_qty})")
+                        st.rerun()  # Rerun to populate fields
+                    else:
+                        st.error(f"SKU '{search_sku}' not found in Price Book")
+                else:
+                    st.warning("Please enter a SKU/UPC first")
+
+        name_input = st.text_input("Product Name", key="inv_name")
+        
+        col3, col4, col5 = st.columns([1, 1, 1])
+        with col3:
+            qty_input = st.number_input("Quantity", min_value=0.0, value=float(st.session_state.get("inv_qty", 0.0)), step=1.0, key="inv_qty")
+        with col4:
+            cost_input = st.number_input(
+                "Unit Cost ($)", 
+                min_value=0.0, 
+                value=float(st.session_state.get("inv_cost", 0.0)),
+                step=0.01,
+                format="%.2f",
+                key="inv_cost"
+            )
+        with col5:
+            calculated_value = qty_input * cost_input
+            st.metric("Value", fmt_currency(calculated_value))
+
+        update_mode = st.radio(
+            "Update Mode",
+            ["Set Quantity (replace)", "Add to Quantity (increase)", "Subtract from Quantity (decrease)"],
+            key="inv_update_mode"
+        )
+
+        if st.button("Update Inventory", use_container_width=True):
+            # Use the SKU from session state if available (from lookup), otherwise from form input
+            working_sku = st.session_state.get("inv_sku_input", sku_input.strip())
+            working_sku = normalize_sku(working_sku)
+            
+            if not working_sku:
+                st.error("SKU is required")
+            elif not name_input.strip():
+                st.error("Product name is required")
+            else:
+                existing = inventory[inventory["SKU"] == working_sku]
+                
+                if update_mode == "Set Quantity (replace)":
+                    new_qty = qty_input
+                elif update_mode == "Add to Quantity (increase)":
+                    current_qty = existing.iloc[0]["Quantity"] if not existing.empty else 0.0
+                    new_qty = current_qty + qty_input
+                else:  # Subtract
+                    current_qty = existing.iloc[0]["Quantity"] if not existing.empty else 0.0
+                    new_qty = max(0.0, current_qty - qty_input)
+
+                # Remove existing entry for this SKU
+                inventory_updated = inventory[inventory["SKU"] != working_sku].copy()
+                
+                # Add new/updated entry
+                new_row = pd.DataFrame([{
+                    "SKU": working_sku,
+                    "Name": name_input.strip(),
+                    "Quantity": new_qty,
+                    "UnitCost": cost_input,
+                    "LastUpdated": datetime.now()
+                }])
+                
+                inventory_updated = pd.concat([inventory_updated, new_row], ignore_index=True)
+                save_inventory(inventory_updated)
+                
+                # Clear session state after successful update
+                for k in ["inv_sku_input", "inv_name", "inv_cost", "inv_qty"]:
+                    st.session_state.pop(k, None)
+                
+                st.success(f"Updated inventory for {working_sku}: {name_input.strip()} → {new_qty} units")
+                st.rerun()
+
+    with tab3:
+        st.subheader("Log Inventory Delivery")
+        
+        deliveries = load_inventory_deliveries()
+        vendors = load_invoice_vendors()
+        vendor_list = sorted(vendors["Vendor"].fillna("").astype(str).str.strip().replace({"": None}).dropna().unique())
+
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            del_date = st.date_input("Delivery Date", value=date.today(), key="inv_del_date")
+        with col2:
+            del_vendor = st.selectbox("Vendor", options=vendor_list, key="inv_del_vendor") if vendor_list else st.text_input("Vendor", key="inv_del_vendor")
+
+        col3, col4 = st.columns(2)
+        with col3:
+            del_sku = st.text_input("SKU/UPC", key="inv_del_sku")
+        with col4:
+            if st.button("Look up", key="inv_del_lookup"):
+                if del_sku.strip():
+                    search_sku = normalize_sku(del_sku.strip())
+                    match = pricebook[pricebook["SKU"] == search_sku]
+                    if not match.empty:
+                        st.session_state["inv_del_sku"] = search_sku
+                        st.session_state["inv_del_name_input"] = match.iloc[0]["Name"]
+                        st.session_state["inv_del_cost_input"] = float(match.iloc[0]["UnitCost"])
+                        st.success(f"Found: {match.iloc[0]['Name']}")
+                        st.rerun()
+                    else:
+                        st.warning("SKU not found")
+
+        del_name = st.text_input("Product Name", key="inv_del_name_input")
+        
+        col5, col6 = st.columns(2)
+        with col5:
+            del_qty = st.number_input("Quantity Delivered", min_value=0.0, value=0.0, step=1.0, key="inv_del_qty")
+        with col6:
+            del_cost = st.number_input(
+                "Unit Cost ($)",
+                min_value=0.0,
+                value=float(st.session_state.get("inv_del_cost_input", 0.0)),
+                step=0.01,
+                format="%.2f",
+                key="inv_del_cost_input"
+            )
+
+        del_notes = st.text_input("Notes (optional)", key="inv_del_notes")
+
+        if st.button("Log Delivery & Update Inventory", use_container_width=True):
+            if not del_sku.strip() or not del_name.strip():
+                st.error("SKU and Name are required")
+            elif del_qty <= 0:
+                st.error("Quantity must be greater than 0")
+            else:
+                # Log delivery
+                new_delivery = pd.DataFrame([{
+                    "Date": pd.to_datetime(del_date),
+                    "SKU": del_sku.strip(),
+                    "Name": del_name.strip(),
+                    "Quantity": del_qty,
+                    "UnitCost": del_cost,
+                    "Vendor": del_vendor,
+                    "Notes": del_notes.strip()
+                }])
+                deliveries_updated = pd.concat([deliveries, new_delivery], ignore_index=True)
+                save_inventory_deliveries(deliveries_updated)
+
+                # Update inventory (add to existing)
+                current_inv = load_inventory()
+                existing = current_inv[current_inv["SKU"] == del_sku.strip()]
+                
+                if existing.empty:
+                    new_qty = del_qty
+                else:
+                    new_qty = existing.iloc[0]["Quantity"] + del_qty
+
+                current_inv = current_inv[current_inv["SKU"] != del_sku.strip()].copy()
+                new_row = pd.DataFrame([{
+                    "SKU": del_sku.strip(),
+                    "Name": del_name.strip(),
+                    "Quantity": new_qty,
+                    "UnitCost": del_cost,
+                    "LastUpdated": datetime.now()
+                }])
+                current_inv = pd.concat([current_inv, new_row], ignore_index=True)
+                save_inventory(current_inv)
+
+                st.success(f"Logged delivery and updated inventory: {del_name.strip()} +{del_qty} units")
+                st.rerun()
+
+        st.divider()
+        st.subheader("Delivery History")
+        
+        if deliveries.empty:
+            st.info("No deliveries logged yet.")
+        else:
+            view_del = deliveries.copy()
+            view_del["Date"] = pd.to_datetime(view_del["Date"], errors="coerce").dt.strftime("%m-%d-%Y")
+            view_del["Quantity"] = view_del["Quantity"].map(fmt_number)
+            view_del["UnitCost"] = view_del["UnitCost"].map(fmt_currency)
+            view_del["TotalCost"] = (
+                pd.to_numeric(deliveries["Quantity"], errors="coerce").fillna(0.0)
+                * pd.to_numeric(deliveries["UnitCost"], errors="coerce").fillna(0.0)
+            ).map(fmt_currency)
+            
+            view_del = view_del.sort_values("Date", ascending=False)
+            st.dataframe(view_del[["Date", "SKU", "Name", "Quantity", "UnitCost", "TotalCost", "Vendor", "Notes"]], use_container_width=True)
+
+    with tab4:
+        st.subheader("Price Book Database")
+        st.caption("Manage your master price book. This is used by the Inside COGS Calculator to calculate costs.")
+        
+        # Upload new price book CSV
+        with st.expander("📤 Upload Price Book CSV"):
+            pb_upload = st.file_uploader("Upload Price Book CSV", type=["csv"], key="pb_upload")
+            
+            if pb_upload:
+                try:
+                    pb_raw = pd.read_csv(pb_upload)
+                    st.write("**Preview uploaded file:**")
+                    st.dataframe(pb_raw.head(10), use_container_width=True)
+                    
+                    col_map = detect_pricebook_columns(pb_raw)
+                    
+                    pb_clean = pb_raw.rename(columns={
+                        col_map["Sku"]: "SKU",
+                        col_map["Name"]: "Name",
+                        col_map["RetailPrice"]: "RetailPrice",
+                        col_map["UnitCost"]: "UnitCost"
+                    })
+                    
+                    pb_clean = pb_clean[["SKU", "Name", "RetailPrice", "UnitCost"]].copy()
+                    pb_clean["SKU"] = pb_clean["SKU"].apply(normalize_sku)
+                    pb_clean["Name"] = pb_clean["Name"].astype(str)
+                    pb_clean["RetailPrice"] = pd.to_numeric(pb_clean["RetailPrice"], errors="coerce").fillna(0.0)
+                    pb_clean["UnitCost"] = pd.to_numeric(pb_clean["UnitCost"], errors="coerce").fillna(0.0)
+                    pb_clean = pb_clean[pb_clean["SKU"] != ""].drop_duplicates(subset=["SKU"], keep="last")
+                    
+                    st.success(f"✓ Mapped columns and cleaned {len(pb_clean)} items")
+                    st.info("ℹ️ Inventory quantities (In Stock) are preserved and will not be overwritten.")
+                    
+                    replace_mode = st.radio(
+                        "Upload Mode",
+                        ["Merge (update existing SKUs, add new ones)", "Replace entire price book"],
+                        key="pb_upload_mode",
+                        index=0
+                    )
+                    
+                    if st.button("Save Price Book", use_container_width=True):
+                        if replace_mode == "Replace entire price book":
+                            save_pricebook(pb_clean)
+                            st.success(f"✓ Replaced price book with {len(pb_clean)} items. Inventory quantities preserved.")
+                        else:
+                            existing_pb = load_pricebook()
+                            # Remove existing SKUs that are in the upload (will be replaced with new data)
+                            existing_pb = existing_pb[~existing_pb["SKU"].isin(pb_clean["SKU"])].copy()
+                            merged_pb = pd.concat([existing_pb, pb_clean], ignore_index=True)
+                            save_pricebook(merged_pb)
+                            st.success(f"✓ Merged price book. Total items: {len(merged_pb)}. Inventory quantities preserved.")
+                        st.rerun()
+                        
+                except Exception as e:
+                    st.error(f"Error processing price book: {e}")
+        
+        st.divider()
+        
+        # View and edit current price book
+        st.subheader("Current Price Book")
+        
+        if pricebook.empty:
+            st.info("No price book loaded. Upload a CSV above to get started.")
+        else:
+            st.write(f"**Total items:** {len(pricebook)}")
+            
+            # Search/filter
+            search_term = st.text_input("🔍 Search by SKU or Name", key="pb_search")
+            
+            if search_term:
+                filtered_pb = pricebook[
+                    pricebook["SKU"].str.contains(search_term, case=False, na=False) |
+                    pricebook["Name"].str.contains(search_term, case=False, na=False)
+                ].copy()
+            else:
+                filtered_pb = pricebook.copy()
+            
+            st.write(f"**Showing:** {len(filtered_pb)} items")
+            
+            # Merge with inventory to show stock levels
+            filtered_pb_with_inv = filtered_pb.merge(
+                inventory[["SKU", "Quantity"]],
+                on="SKU",
+                how="left"
+            )
+            filtered_pb_with_inv["Quantity"] = filtered_pb_with_inv["Quantity"].fillna(0.0)
+            
+            # Format for display
+            view_pb = filtered_pb_with_inv.copy()
+            view_pb["In Stock"] = view_pb["Quantity"].map(fmt_number)
+            view_pb["RetailPrice"] = view_pb["RetailPrice"].map(fmt_currency)
+            view_pb["UnitCost"] = view_pb["UnitCost"].map(fmt_currency)
+            view_pb["Margin"] = (
+                (pd.to_numeric(filtered_pb_with_inv["RetailPrice"], errors="coerce").fillna(0.0)
+                - pd.to_numeric(filtered_pb_with_inv["UnitCost"], errors="coerce").fillna(0.0))
+                / pd.to_numeric(filtered_pb_with_inv["RetailPrice"], errors="coerce").fillna(0.0)
+                * 100
+            ).map(lambda x: f"{x:.1f}%" if pd.notna(x) and x != float('inf') else "")
+            
+            st.dataframe(view_pb[["SKU", "Name", "In Stock", "RetailPrice", "UnitCost", "Margin"]], use_container_width=True, height=400)
+            
+            # Download current price book
+            csv_download = pricebook.to_csv(index=False).encode("utf-8")
+            st.download_button(
+                "📥 Download Current Price Book",
+                data=csv_download,
+                file_name=f"pricebook_{datetime.now().strftime('%Y%m%d')}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+            
+            st.divider()
+            
+            # Manual add/edit single item
+            with st.expander("✏️ Add or Edit Single Item"):
+                st.caption("Add a new item or update an existing SKU")
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    edit_sku = st.text_input("SKU/UPC", key="pb_edit_sku")
+                with col2:
+                    if st.button("Load existing", key="pb_load_existing"):
+                        if edit_sku.strip():
+                            match = pricebook[pricebook["SKU"] == edit_sku.strip()]
+                            if not match.empty:
+                                st.session_state["pb_edit_name"] = match.iloc[0]["Name"]
+                                st.session_state["pb_edit_retail"] = match.iloc[0]["RetailPrice"]
+                                st.session_state["pb_edit_cost"] = match.iloc[0]["UnitCost"]
+                                st.success("Loaded existing item")
+                            else:
+                                st.warning("SKU not found")
+                
+                edit_name = st.text_input("Name", value=st.session_state.get("pb_edit_name", ""), key="pb_edit_name_input")
+                
+                col3, col4 = st.columns(2)
+                with col3:
+                    edit_retail = st.number_input(
+                        "Retail Price ($)",
+                        min_value=0.0,
+                        value=float(st.session_state.get("pb_edit_retail", 0.0)),
+                        step=0.01,
+                        format="%.2f",
+                        key="pb_edit_retail_input"
+                    )
+                with col4:
+                    edit_cost = st.number_input(
+                        "Unit Cost ($)",
+                        min_value=0.0,
+                        value=float(st.session_state.get("pb_edit_cost", 0.0)),
+                        step=0.01,
+                        format="%.2f",
+                        key="pb_edit_cost_input"
+                    )
+                
+                if st.button("Save Item to Price Book", use_container_width=True):
+                    if not edit_sku.strip() or not edit_name.strip():
+                        st.error("SKU and Name are required")
+                    else:
+                        # Remove existing entry for this SKU
+                        pb_updated = pricebook[pricebook["SKU"] != edit_sku.strip()].copy()
+                        
+                        # Add new/updated entry
+                        new_row = pd.DataFrame([{
+                            "SKU": edit_sku.strip(),
+                            "Name": edit_name.strip(),
+                            "RetailPrice": edit_retail,
+                            "UnitCost": edit_cost
+                        }])
+                        
+                        pb_updated = pd.concat([pb_updated, new_row], ignore_index=True)
+                        save_pricebook(pb_updated)
+                        
+                        st.success(f"✓ Saved {edit_sku.strip()}: {edit_name.strip()}")
+                        st.session_state.pop("pb_edit_name", None)
+                        st.session_state.pop("pb_edit_retail", None)
+                        st.session_state.pop("pb_edit_cost", None)
+                        st.rerun()
 
 # ============================================================
 # Page: Store Profit (Day + Month)
@@ -2454,7 +2876,6 @@ else:
     daily["NetDailyProfit"] = (
         daily["NetFuelProfit"]
         + daily["NetInsideProfit"]
-        - daily["DailyInvoices"]
         - daily["FixedCostAllocated"]
     )
 
@@ -2471,14 +2892,16 @@ else:
     st.dataframe(show, use_container_width=True)
 
     # Month totals
+    month_gross_sales = float(fuel_month2["POSRevenue"].fillna(0.0).astype(float).sum()) + float(store_month2["InsideSales"].fillna(0.0).astype(float).sum())
     month_fuel = float(daily["NetFuelProfit"].replace("", 0).apply(lambda x: float(str(x).replace("$","").replace(",","")) if isinstance(x,str) else 0).sum()) if False else float(daily["NetFuelProfit"].astype(float).sum())
     month_inside = float(daily["NetInsideProfit"].astype(float).sum())
     month_invoices = float(daily["DailyInvoices"].astype(float).sum())
     month_station = float(daily["NetDailyProfit"].astype(float).sum())
 
-    m1, m2, m3, m4, m5 = st.columns(5)
-    m1.metric("Fuel profit (month)", fmt_currency(month_fuel))
-    m2.metric("Inside profit (month)", fmt_currency(month_inside))
-    m3.metric("Invoices (month)", fmt_currency(month_invoices))
-    m4.metric("Fixed costs (month)", fmt_currency(fixed_total))
-    m5.metric("Total station profit (month)", fmt_currency(month_station))
+    m1, m2, m3, m4, m5, m6 = st.columns(6)
+    m1.metric("Gross Sales (month)", fmt_currency(month_gross_sales))
+    m2.metric("Fuel profit (month)", fmt_currency(month_fuel))
+    m3.metric("Inside profit (month)", fmt_currency(month_inside))
+    m4.metric("Invoices (month)", fmt_currency(month_invoices))
+    m5.metric("Fixed costs (month)", fmt_currency(fixed_total))
+    m6.metric("Total station profit (month)", fmt_currency(month_station))
