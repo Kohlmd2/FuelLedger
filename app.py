@@ -32,6 +32,9 @@ st.markdown(
     """
     <style>
         section[data-testid="stSidebar"] > div:first-child {
+            height: 100%;
+        }
+        section[data-testid="stSidebar"] [data-testid="stSidebarContent"] {
             display: flex;
             flex-direction: column;
             height: 100%;
