@@ -34,11 +34,14 @@ st.markdown(
         section[data-testid="stSidebar"] > div:first-child {
             height: 100%;
         }
+        section[data-testid="stSidebar"] [data-testid="stSidebarContent"] {
+            height: 100vh;
+            overflow: hidden;
+        }
         section[data-testid="stSidebar"] [data-testid="stSidebarContent"] > div:first-child {
             display: flex;
             flex-direction: column;
             height: 100%;
-            min-height: 100vh;
         }
         .sidebar-bottom {
             margin-top: auto;
