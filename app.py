@@ -165,11 +165,20 @@ def require_login() -> None:
                     st.error(msg)
         st.stop()
 
-    st.sidebar.subheader("Login")
-    with st.sidebar.form("login_form"):
-        login = st.text_input("Username or email")
-        password = st.text_input("Password", type="password")
-        submitted = st.form_submit_button("Log in")
+    # Centered login form
+    st.markdown(
+        """
+        <div style="height: 20vh;"></div>
+        """,
+        unsafe_allow_html=True,
+    )
+    c1, c2, c3 = st.columns([1, 1.2, 1])
+    with c2:
+        st.subheader("Login")
+        with st.form("login_form"):
+            login = st.text_input("Username or email")
+            password = st.text_input("Password", type="password")
+            submitted = st.form_submit_button("Log in")
     if submitted:
         row = _verify_user(login, password)
         if row:
@@ -185,7 +194,7 @@ def require_login() -> None:
                 st.session_state.pop(k, None)
             st.rerun()
         else:
-            st.sidebar.error("Invalid login.")
+            st.error("Invalid login.")
 
     st.stop()
 
