@@ -2309,23 +2309,47 @@ elif page == "Inventory":
         st.session_state.setdefault("inv_cost", 0.0)
         st.session_state.setdefault("inv_lookup_msg", "")
         
+        def _find_pricebook_match(sku_val: str):
+            if pricebook.empty or not sku_val:
+                return None, None
+            search_sku = normalize_sku(sku_val)
+            candidates = [search_sku]
+            # Pad to 12 digits if shorter (UPC-A)
+            if search_sku.isdigit() and len(search_sku) < 12:
+                candidates.append(search_sku.zfill(12))
+            # Also try no-leading-zeros match
+            candidates.append(search_sku.lstrip("0") or "0")
+
+            # Build quick maps for exact and no-lead matches
+            pb = pricebook.copy()
+            pb["SKU"] = pb["SKU"].astype(str).apply(normalize_sku)
+            pb["SKU_NOLEAD"] = pb["SKU"].str.lstrip("0").replace({"": "0"})
+
+            for cand in candidates:
+                match = pb[pb["SKU"] == cand]
+                if not match.empty:
+                    return cand, match.iloc[0]
+                match = pb[pb["SKU_NOLEAD"] == cand]
+                if not match.empty:
+                    return match.iloc[0]["SKU"], match.iloc[0]
+            return None, None
+
         def _inv_lookup():
             sku_val = st.session_state.get("inv_sku_input", "").strip()
             if not sku_val:
                 st.warning("Please enter a SKU/UPC first")
                 return
-            search_sku = normalize_sku(sku_val)
-            match = pricebook[pricebook["SKU"] == search_sku]
-            if match.empty:
-                st.error(f"SKU '{search_sku}' not found in Price Book")
+            matched_sku, match_row = _find_pricebook_match(sku_val)
+            if match_row is None:
+                st.error(f"SKU '{sku_val}' not found in Price Book")
                 return
-            current_inv = inventory[inventory["SKU"] == search_sku]
+            current_inv = inventory[inventory["SKU"] == matched_sku]
             current_qty = current_inv.iloc[0]["Quantity"] if not current_inv.empty else 0.0
-            st.session_state["inv_name"] = match.iloc[0]["Name"]
-            st.session_state["inv_cost"] = float(match.iloc[0]["UnitCost"])
+            st.session_state["inv_name"] = match_row["Name"]
+            st.session_state["inv_cost"] = float(match_row["UnitCost"])
             st.session_state["inv_qty"] = float(current_qty)
-            st.session_state["inv_sku_input"] = search_sku
-            st.session_state["inv_lookup_msg"] = f"✓ Found: {match.iloc[0]['Name']} (Current stock: {current_qty})"
+            st.session_state["inv_sku_input"] = matched_sku
+            st.session_state["inv_lookup_msg"] = f"✓ Found: {match_row['Name']} (Current stock: {current_qty})"
 
         col1, col2 = st.columns([3, 1])
         with col1:
@@ -2422,15 +2446,14 @@ elif page == "Inventory":
             if not sku_val:
                 st.warning("Please enter a SKU/UPC first")
                 return
-            search_sku = normalize_sku(sku_val)
-            match = pricebook[pricebook["SKU"] == search_sku]
-            if match.empty:
+            matched_sku, match_row = _find_pricebook_match(sku_val)
+            if match_row is None:
                 st.warning("SKU not found")
                 return
-            st.session_state["inv_del_sku"] = search_sku
-            st.session_state["inv_del_name_input"] = match.iloc[0]["Name"]
-            st.session_state["inv_del_cost_input"] = float(match.iloc[0]["UnitCost"])
-            st.session_state["inv_del_lookup_msg"] = f"Found: {match.iloc[0]['Name']}"
+            st.session_state["inv_del_sku"] = matched_sku
+            st.session_state["inv_del_name_input"] = match_row["Name"]
+            st.session_state["inv_del_cost_input"] = float(match_row["UnitCost"])
+            st.session_state["inv_del_lookup_msg"] = f"Found: {match_row['Name']}"
 
         col3, col4 = st.columns(2)
         with col3:
