@@ -32,12 +32,14 @@ st.set_page_config(page_title="Fuel Profit Tracker", layout="wide")
 st.markdown(
     """
     <style>
-        [data-testid="stDataFrame"] thead th {
+        [data-testid="stDataFrame"] thead th,
+        [data-testid="stDataEditor"] thead th {
             font-weight: 700 !important;
             font-size: 1.05rem !important;
             color: #e7e7e7 !important;
         }
-        [data-testid="stDataFrame"] tbody tr:nth-child(even) td {
+        [data-testid="stDataFrame"] tbody tr:nth-child(even) td,
+        [data-testid="stDataEditor"] tbody tr:nth-child(even) td {
             background-color: #1f232b !important;
         }
     </style>
