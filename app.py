@@ -2628,6 +2628,9 @@ elif page == "Inventory":
 
         items_source = st.session_state["inv_del_items_base"].copy()
         items_source = items_source.fillna("")
+        for col in ["Quantity", "UnitCost", "RetailPrice", "Margin", "CurrentQty"]:
+            if col in items_source.columns:
+                items_source[col] = pd.to_numeric(items_source[col], errors="coerce").fillna(0.0)
 
         items_edit = st.data_editor(
             items_source,
