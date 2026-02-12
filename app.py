@@ -1441,7 +1441,8 @@ elif page == "Invoices":
                 "DeliveryDay": "",
                 "Notes": "",
             }])
-            updated = pd.concat([vendors_clean, add_row], ignore_index=True)
+            # Insert new row at the top so it's immediately visible after rerun.
+            updated = pd.concat([add_row, vendors_clean], ignore_index=True)
             save_invoice_vendors(updated)
             st.rerun()
     with vc2:
