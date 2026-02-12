@@ -975,8 +975,8 @@ def load_pricebook() -> pd.DataFrame:
     # Coerce types
     df["SKU"] = df["SKU"].astype(str).str.strip()
     df["Name"] = df["Name"].astype(str)
-    df["RetailPrice"] = pd.to_numeric(df["RetailPrice"], errors="coerce").fillna(0.0)
-    df["UnitCost"] = pd.to_numeric(df["UnitCost"], errors="coerce").fillna(0.0)
+    df["RetailPrice"] = df["RetailPrice"].apply(parse_money).fillna(0.0)
+    df["UnitCost"] = df["UnitCost"].apply(parse_money).fillna(0.0)
     return df
 
 
@@ -1695,6 +1695,9 @@ elif page == "Inside COGS Calculator":
         st.stop()
     
     st.success(f"✓ Price book loaded: {len(current_pb)} SKUs from Inventory")
+    zero_cost = (pd.to_numeric(current_pb["UnitCost"], errors="coerce").fillna(0.0) == 0).sum()
+    if zero_cost > 0:
+        st.warning(f"Price book has {zero_cost} items with UnitCost = 0. These will show as missing cost.")
 
     # --- Daily Product Report Processing ---
     st.subheader("Daily Product Report")
