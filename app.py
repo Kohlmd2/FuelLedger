@@ -3038,12 +3038,11 @@ else:
         st.session_state["fixed_costs_month"] = str(month)
 
     # --------------------------------------------------------
-    # Fixed costs table with persistent column widths (AgGrid)
+    # Fixed costs table editor
     # --------------------------------------------------------
-    st.caption("Tip: With the grid below, you can resize columns and the widths will persist while you add rows.")
+    st.caption("Tip: Use the left checkbox and top-right trash icon to delete selected rows.")
 
-    # Add/Delete controls (we manage rows in session_state for stability)
-    c_add, c_del, c_help = st.columns([1, 1, 2])
+    c_add, c_help = st.columns([1, 2])
     with c_add:
         if st.button("➕ Add fixed cost line"):
             st.session_state["fixed_costs_df"] = pd.concat(
@@ -3053,16 +3052,10 @@ else:
                 ],
                 ignore_index=True,
             )
-            st.session_state["fixed_costs_grid_reload"] = True
-            st.session_state["fixed_costs_grid_version"] = (
-                int(st.session_state.get("fixed_costs_grid_version", 0)) + 1
-            )
             st.rerun()
 
-    selected_rows = []
-
     with c_help:
-        st.caption("Tip: Resize columns once; widths will persist while you add rows. Press Enter to commit a cell edit.")
+        st.caption("Press Enter to commit a cell edit.")
 
     # --- Fixed costs editor ---
     selected_month = str(month)
@@ -3072,73 +3065,25 @@ else:
     # Keep month aligned to the current selected month
     fixed_df["Month"] = selected_month
 
-    if AgGrid is None:
-        st.warning("AgGrid not installed. Using basic editor (column widths won’t persist).")
-        fixed_edit = st.data_editor(
-            fixed_df,
-            num_rows="dynamic",
-            use_container_width=True,
-        )
-        st.session_state["fixed_costs_df"] = fixed_edit
-    else:
-        # --- AgGrid editor (no auto-fit; keep user column widths) ---
-        fixed_df_for_grid = fixed_df.copy()
-        fixed_df_for_grid.insert(0, "Row", range(1, len(fixed_df_for_grid) + 1))
-
-        gb = GridOptionsBuilder.from_dataframe(fixed_df_for_grid)
-        gb.configure_default_column(editable=True, resizable=True, sortable=False, filter=False)
-        gb.configure_column("Row", editable=False, pinned="left", width=80)
-        gb.configure_column("Month", editable=False)
-        gb.configure_column("Category", editable=True)
-        gb.configure_column("Amount", editable=True, type=["numericColumn"], precision=2, valueFormatter=CURRENCY_JS)
-        gb.configure_selection("multiple", use_checkbox=True, header_checkbox=True)
-        gb.configure_grid_options(
-            stopEditingWhenCellsLoseFocus=True,
-            singleClickEdit=True,
-            enterMovesDownAfterEdit=True,
-            enterMovesDown=True,
-        )
-        grid_options = gb.build()
-
-        grid_response = AgGrid(
-            fixed_df_for_grid,
-            gridOptions=grid_options,
-            allow_unsafe_jscode=True,
-            update_mode=GridUpdateMode.VALUE_CHANGED,
-            data_return_mode=DataReturnMode.AS_INPUT,
-            fit_columns_on_grid_load=False,
-            theme="streamlit",
-            height=260,
-            key=f"fixed_costs_grid_{month_str}_{st.session_state.get('fixed_costs_grid_version', 0)}",
-            reload_data=bool(st.session_state.get("fixed_costs_grid_reload", False)),
-        )
-        st.session_state["fixed_costs_grid_reload"] = False
-
-        edited = pd.DataFrame(grid_response["data"])
-        selected_rows = grid_response.get("selected_rows", [])
-        fixed_edit = edited.drop(columns=["Row"], errors="ignore").copy()
-        st.session_state["fixed_costs_df"] = fixed_edit
-
-    with c_del:
-        if AgGrid is not None and st.button("🗑️ Delete selected rows"):
-            if selected_rows:
-                selected_ids = {r.get("Row") for r in selected_rows if r.get("Row") is not None}
-                fixed_df_for_grid = fixed_df.copy()
-                fixed_df_for_grid.insert(0, "Row", range(1, len(fixed_df_for_grid) + 1))
-                keep = ~fixed_df_for_grid["Row"].isin(selected_ids)
-                st.session_state["fixed_costs_df"] = fixed_df_for_grid.loc[keep].drop(columns=["Row"])
-                st.session_state["fixed_costs_grid_reload"] = True
-                st.session_state["fixed_costs_grid_version"] = (
-                    int(st.session_state.get("fixed_costs_grid_version", 0)) + 1
-                )
-                st.rerun()
-            else:
-                st.info("Select one or more rows to delete.")
-        elif AgGrid is None:
-            if st.button("🗑️ Delete last row"):
-                if len(st.session_state["fixed_costs_df"]) > 0:
-                    st.session_state["fixed_costs_df"] = st.session_state["fixed_costs_df"].iloc[:-1].copy()
-                    st.rerun()
+    fixed_edit = st.data_editor(
+        fixed_df[["Month", "Category", "Amount"]],
+        num_rows="dynamic",
+        use_container_width=True,
+        hide_index=True,
+        key=f"fixed_costs_editor_{month_str}",
+        disabled=["Month"],
+        column_config={
+            "Month": st.column_config.TextColumn("Month"),
+            "Category": st.column_config.TextColumn("Category"),
+            "Amount": st.column_config.NumberColumn("Amount", format="$%.2f"),
+        },
+    )
+    fixed_edit = fixed_edit.copy()
+    fixed_edit["Month"] = selected_month
+    fixed_edit["Category"] = fixed_edit["Category"].astype(str)
+    fixed_edit["Amount"] = pd.to_numeric(fixed_edit["Amount"], errors="coerce").fillna(0.0)
+    fixed_edit = fixed_edit[(fixed_edit["Category"].str.strip() != "") | (fixed_edit["Amount"] != 0)].copy()
+    st.session_state["fixed_costs_df"] = fixed_edit
 
     if st.button("Save monthly fixed costs"):
         # Merge back into the full fixed-costs table (replace this month)
