@@ -2367,7 +2367,7 @@ elif page == "Inventory":
     pricebook = load_pricebook()
 
     # Tabs for different sections
-    tab1, tab2, tab3, tab4 = st.tabs(["Current Inventory", "Add/Update Stock", "Delivery History", "Price Book"])
+    tab1, tab2, tab3, tab4 = st.tabs(["Current Inventory", "Add/Update Stock", "Delivery", "Price Book"])
 
     with tab1:
         st.subheader("Current Inventory Levels")
@@ -2552,86 +2552,97 @@ elif page == "Inventory":
         with col2:
             del_vendor = st.selectbox("Vendor", options=vendor_list, key="inv_del_vendor") if vendor_list else st.text_input("Vendor", key="inv_del_vendor")
 
-        def _inv_del_lookup():
-            sku_val = st.session_state.get("inv_del_sku", "").strip()
-            if not sku_val:
-                st.warning("Please enter a SKU/UPC first")
-                return
-            matched_sku, match_row = _find_pricebook_match(sku_val)
-            if match_row is None:
-                st.warning("SKU not found")
-                return
-            st.session_state["inv_del_sku"] = matched_sku
-            st.session_state["inv_del_name_input"] = match_row["Name"]
-            st.session_state["inv_del_cost_input"] = float(match_row["UnitCost"])
-            st.session_state["inv_del_lookup_msg"] = f"Found: {match_row['Name']}"
+        st.session_state.setdefault(
+            "inv_del_items",
+            pd.DataFrame(columns=["SKU", "Name", "Quantity", "UnitCost", "Notes"])
+        )
 
-        col3, col4 = st.columns(2)
-        with col3:
-            del_sku = st.text_input("SKU/UPC", key="inv_del_sku")
-        with col4:
-            st.button("Look up", key="inv_del_lookup", on_click=_inv_del_lookup)
+        c_add, c_fill = st.columns([1, 2])
+        with c_add:
+            if st.button("➕ Add item", key="inv_del_add_item"):
+                st.session_state["inv_del_items"] = pd.concat(
+                    [
+                        st.session_state["inv_del_items"],
+                        pd.DataFrame([{"SKU": "", "Name": "", "Quantity": 0.0, "UnitCost": 0.0, "Notes": ""}]),
+                    ],
+                    ignore_index=True,
+                )
+        with c_fill:
+            if st.button("Auto-fill from Price Book", key="inv_del_autofill"):
+                items = st.session_state["inv_del_items"].copy()
+                for i, row in items.iterrows():
+                    sku_val = str(row.get("SKU", "")).strip()
+                    if not sku_val:
+                        continue
+                    matched_sku, match_row = _find_pricebook_match(sku_val)
+                    if match_row is None:
+                        continue
+                    items.at[i, "SKU"] = matched_sku
+                    if not str(row.get("Name", "")).strip():
+                        items.at[i, "Name"] = match_row["Name"]
+                    if float(row.get("UnitCost", 0) or 0) == 0:
+                        items.at[i, "UnitCost"] = float(match_row["UnitCost"])
+                st.session_state["inv_del_items"] = items
 
-        if st.session_state.get("inv_del_lookup_msg"):
-            st.success(st.session_state["inv_del_lookup_msg"])
-
-        del_name = st.text_input("Product Name", key="inv_del_name_input")
-        
-        col5, col6 = st.columns(2)
-        with col5:
-            del_qty = st.number_input("Quantity Delivered", min_value=0.0, value=0.0, step=1.0, key="inv_del_qty")
-        with col6:
-            del_cost = st.number_input(
-                "Unit Cost ($)",
-                min_value=0.0,
-                value=float(st.session_state.get("inv_del_cost_input", 0.0)),
-                step=0.01,
-                format="%.2f",
-                key="inv_del_cost_input"
-            )
-
-        del_notes = st.text_input("Notes (optional)", key="inv_del_notes")
+        items_edit = st.data_editor(
+            st.session_state["inv_del_items"],
+            num_rows="dynamic",
+            use_container_width=True,
+            column_config={
+                "SKU": st.column_config.TextColumn("SKU/UPC"),
+                "Name": st.column_config.TextColumn("Product Name"),
+                "Quantity": st.column_config.NumberColumn("Qty", min_value=0.0, step=1.0),
+                "UnitCost": st.column_config.NumberColumn("Unit Cost ($)", min_value=0.0, step=0.01, format="%.2f"),
+                "Notes": st.column_config.TextColumn("Notes"),
+            },
+            key="inv_del_items_editor",
+        )
+        st.session_state["inv_del_items"] = items_edit
 
         if st.button("Log Delivery & Update Inventory", use_container_width=True):
-            if not del_sku.strip() or not del_name.strip():
-                st.error("SKU and Name are required")
-            elif del_qty <= 0:
-                st.error("Quantity must be greater than 0")
+            items = st.session_state["inv_del_items"].copy()
+            items["SKU"] = items["SKU"].astype(str).str.strip()
+            items["Name"] = items["Name"].astype(str).str.strip()
+            items["Quantity"] = pd.to_numeric(items["Quantity"], errors="coerce").fillna(0.0)
+            items["UnitCost"] = pd.to_numeric(items["UnitCost"], errors="coerce").fillna(0.0)
+            items["Notes"] = items["Notes"].astype(str).str.strip()
+
+            valid = items[(items["SKU"] != "") & (items["Name"] != "") & (items["Quantity"] > 0)]
+            if valid.empty:
+                st.error("Add at least one item with SKU, Name, and Quantity > 0.")
             else:
-                # Log delivery
-                new_delivery = pd.DataFrame([{
-                    "Date": pd.to_datetime(del_date),
-                    "SKU": del_sku.strip(),
-                    "Name": del_name.strip(),
-                    "Quantity": del_qty,
-                    "UnitCost": del_cost,
-                    "Vendor": del_vendor,
-                    "Notes": del_notes.strip()
-                }])
-                deliveries_updated = pd.concat([deliveries, new_delivery], ignore_index=True)
+                # Log deliveries
+                valid = valid.copy()
+                valid["Date"] = pd.to_datetime(del_date)
+                valid["Vendor"] = del_vendor
+                deliveries_updated = pd.concat([deliveries, valid[["Date", "SKU", "Name", "Quantity", "UnitCost", "Vendor", "Notes"]]], ignore_index=True)
                 save_inventory_deliveries(deliveries_updated)
 
-                # Update inventory (add to existing)
+                # Update inventory for each item
                 current_inv = load_inventory()
-                existing = current_inv[current_inv["SKU"] == del_sku.strip()]
-                
-                if existing.empty:
-                    new_qty = del_qty
-                else:
-                    new_qty = existing.iloc[0]["Quantity"] + del_qty
-
-                current_inv = current_inv[current_inv["SKU"] != del_sku.strip()].copy()
-                new_row = pd.DataFrame([{
-                    "SKU": del_sku.strip(),
-                    "Name": del_name.strip(),
-                    "Quantity": new_qty,
-                    "UnitCost": del_cost,
-                    "LastUpdated": datetime.now()
-                }])
-                current_inv = pd.concat([current_inv, new_row], ignore_index=True)
+                for _, row in valid.iterrows():
+                    sku = row["SKU"]
+                    name = row["Name"]
+                    qty = float(row["Quantity"])
+                    cost = float(row["UnitCost"])
+                    existing = current_inv[current_inv["SKU"] == sku]
+                    if existing.empty:
+                        new_qty = qty
+                    else:
+                        new_qty = float(existing.iloc[0]["Quantity"]) + qty
+                    current_inv = current_inv[current_inv["SKU"] != sku].copy()
+                    new_row = pd.DataFrame([{
+                        "SKU": sku,
+                        "Name": name,
+                        "Quantity": new_qty,
+                        "UnitCost": cost,
+                        "LastUpdated": datetime.now()
+                    }])
+                    current_inv = pd.concat([current_inv, new_row], ignore_index=True)
                 save_inventory(current_inv)
 
-                st.success(f"Logged delivery and updated inventory: {del_name.strip()} +{del_qty} units")
+                st.success(f"Logged {len(valid)} delivery items and updated inventory.")
+                st.session_state["inv_del_items"] = pd.DataFrame(columns=["SKU", "Name", "Quantity", "UnitCost", "Notes"])
                 st.rerun()
 
         st.divider()
