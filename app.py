@@ -2812,14 +2812,20 @@ else:
 
     fixed = load_fixed_costs()
 
-    # Build a view for this month (and seed a few defaults if none)
+    # Build a view for this month (carry forward last month if none)
     month_rows = fixed[fixed["Month"].astype(str) == str(month)].copy()
     if month_rows.empty:
-        month_rows = pd.DataFrame([
-            {"Month": month, "Category": "Rent", "Amount": 0.0},
-            {"Month": month, "Category": "Electric", "Amount": 0.0},
-            {"Month": month, "Category": "Internet", "Amount": 0.0},
-        ])
+        fixed_dates = pd.to_datetime(fixed["Month"], errors="coerce")
+        if fixed_dates.notna().any():
+            last_month = fixed_dates.max().strftime("%Y-%m")
+            month_rows = fixed[fixed["Month"].astype(str) == str(last_month)].copy()
+            month_rows["Month"] = str(month)
+        else:
+            month_rows = pd.DataFrame([
+                {"Month": month, "Category": "Rent", "Amount": 0.0},
+                {"Month": month, "Category": "Electric", "Amount": 0.0},
+                {"Month": month, "Category": "Internet", "Amount": 0.0},
+            ])
 
     # Keep an editable copy in session_state so we can auto-fill Month on newly added rows.
     if (
@@ -2912,6 +2918,27 @@ else:
         selected_rows = grid_response.get("selected_rows", [])
         fixed_edit = edited.drop(columns=["Row"], errors="ignore").copy()
         st.session_state["fixed_costs_df"] = fixed_edit
+
+    with c_del:
+        if AgGrid is not None and st.button("🗑️ Delete selected rows"):
+            if selected_rows:
+                selected_ids = {r.get("Row") for r in selected_rows if r.get("Row") is not None}
+                fixed_df_for_grid = fixed_df.copy()
+                fixed_df_for_grid.insert(0, "Row", range(1, len(fixed_df_for_grid) + 1))
+                keep = ~fixed_df_for_grid["Row"].isin(selected_ids)
+                st.session_state["fixed_costs_df"] = fixed_df_for_grid.loc[keep].drop(columns=["Row"])
+                st.session_state["fixed_costs_grid_reload"] = True
+                st.session_state["fixed_costs_grid_version"] = (
+                    int(st.session_state.get("fixed_costs_grid_version", 0)) + 1
+                )
+                st.rerun()
+            else:
+                st.info("Select one or more rows to delete.")
+        elif AgGrid is None:
+            if st.button("🗑️ Delete last row"):
+                if len(st.session_state["fixed_costs_df"]) > 0:
+                    st.session_state["fixed_costs_df"] = st.session_state["fixed_costs_df"].iloc[:-1].copy()
+                    st.rerun()
 
     if st.button("Save monthly fixed costs"):
         # Merge back into the full fixed-costs table (replace this month)
