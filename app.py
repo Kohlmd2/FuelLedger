@@ -726,10 +726,13 @@ def save_store_daily(df: pd.DataFrame) -> None:
 def load_invoices() -> pd.DataFrame:
     df = _load_csv(user_data_file("invoices.csv"))
     if df.empty:
-        return pd.DataFrame(columns=["Date", "Vendor", "Amount", "Notes"])
+        return pd.DataFrame(columns=["Date", "Vendor", "Amount", "InvoiceNumber", "Notes"])
     df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
     df["Vendor"] = df.get("Vendor", "").astype(str)
     df["Amount"] = pd.to_numeric(df.get("Amount", 0.0), errors="coerce").fillna(0.0)
+    if "InvoiceNumber" not in df.columns:
+        df["InvoiceNumber"] = ""
+    df["InvoiceNumber"] = df["InvoiceNumber"].astype(str)
     if "Notes" not in df.columns:
         df["Notes"] = ""
     return df
@@ -747,6 +750,9 @@ def save_invoices(df: pd.DataFrame) -> None:
         .str.strip()
     )
     out["Amount"] = pd.to_numeric(amount_clean, errors="coerce").fillna(0.0)
+    if "InvoiceNumber" not in out.columns:
+        out["InvoiceNumber"] = ""
+    out["InvoiceNumber"] = out["InvoiceNumber"].astype(str)
     if "Notes" not in out.columns:
         out["Notes"] = ""
     _save_csv(user_data_file("invoices.csv"), out)
@@ -2265,13 +2271,18 @@ elif page == "Invoices":
     with c3:
         inv_amount = st.number_input("Amount ($)", min_value=0.0, value=0.0, step=10.0, format="%.2f", key="invoice_amount")
 
-    inv_notes = st.text_input("Notes (optional)", key="invoice_notes")
+    c4, c5 = st.columns([1, 2])
+    with c4:
+        inv_number = st.text_input("Invoice #", key="invoice_number")
+    with c5:
+        inv_notes = st.text_input("Notes (optional)", key="invoice_notes")
 
     if st.button("Add invoice"):
         new_row = pd.DataFrame([{
             "Date": pd.to_datetime(inv_date),
             "Vendor": inv_vendor.strip(),
             "Amount": float(inv_amount),
+            "InvoiceNumber": inv_number.strip(),
             "Notes": inv_notes.strip(),
         }])
         full = pd.concat([invoices, new_row], ignore_index=True)
@@ -2287,6 +2298,7 @@ elif page == "Invoices":
         view["Date"] = pd.to_datetime(view["Date"], errors="coerce")
         view["Vendor"] = view["Vendor"].fillna("").astype(str)
         view["Amount"] = pd.to_numeric(view["Amount"], errors="coerce").fillna(0.0).map(fmt_currency)
+        view["InvoiceNumber"] = view.get("InvoiceNumber", "").fillna("").astype(str)
         view["Notes"] = view.get("Notes", "").fillna("").astype(str)
         view = view.sort_values("Date", ascending=False)
         view["Date"] = view["Date"].dt.strftime("%m-%d-%Y")
@@ -2299,6 +2311,7 @@ elif page == "Invoices":
                 "Date": st.column_config.TextColumn("Date"),
                 "Vendor": st.column_config.TextColumn("Vendor"),
                 "Amount": st.column_config.TextColumn("Amount"),
+                "InvoiceNumber": st.column_config.TextColumn("Invoice #"),
                 "Notes": st.column_config.TextColumn("Notes"),
             },
         )
