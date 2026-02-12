@@ -310,6 +310,32 @@ def fmt_percent(x):
 def fmt_number(x):
     return f"{x:,.3f}" if pd.notna(x) else ""
 
+# ============================================================
+# Table styling helpers
+# ============================================================
+
+def _zebra_strip(df: pd.DataFrame):
+    styles = pd.DataFrame("", index=df.index, columns=df.columns)
+    styles.iloc[1::2, :] = "background-color: #f5f5f5;"
+    return styles
+
+
+def show_df(df: pd.DataFrame, **kwargs) -> None:
+    if df is None or not isinstance(df, pd.DataFrame):
+        st.dataframe(df, **kwargs)
+        return
+    if df.empty:
+        st.dataframe(df, **kwargs)
+        return
+    styled = (
+        df.style
+        .set_table_styles([
+            {"selector": "th", "props": [("font-weight", "700"), ("font-size", "1.05rem")]}
+        ])
+        .apply(_zebra_strip, axis=None)
+    )
+    st.dataframe(styled, **kwargs)
+
 # For conditional coloring in tables (Streamlit dataframe styling)
 
 def _color_profit(v):
@@ -1074,13 +1100,13 @@ if page == "Fuel Calculator":
 
     raw = pd.read_csv(uploaded)
     with st.expander("Preview RAW CSV"):
-        st.dataframe(raw.head(30), use_container_width=True)
+        show_df(raw.head(30), use_container_width=True)
 
     clean = clean_transactions(raw)
     if (clean["TenderType"] == "OTHER").any():
         st.warning("Some transactions have unrecognized tender types and are treated as CASH for pricing. Review tender codes if this looks wrong.")
     with st.expander("Preview CLEAN transactions"):
-        st.dataframe(clean.head(50), use_container_width=True)
+        show_df(clean.head(50), use_container_width=True)
 
     summary = summarize_by_day(clean)
 
@@ -1222,7 +1248,7 @@ if page == "Fuel Calculator":
     view["MarginPerGallon"] = profit["MarginPerGallon"].map(fmt_percent)
 
     st.markdown("### By Day + Grade")
-    st.dataframe(view[[
+    show_df(view[[
         "Date", "Grade",
         "Gallons_CASH", "Gallons_CREDIT", "TotalGallons",
         "CashPrice", "CreditPrice", "CostPerGallon",
@@ -1255,7 +1281,7 @@ if page == "Fuel Calculator":
         dview[col] = dview[col].map(fmt_currency)
     dview["MarginPerGallon"] = daily["MarginPerGallon"].map(fmt_percent)
 
-    st.dataframe(dview.sort_values("Date"), use_container_width=True)
+    show_df(dview.sort_values("Date"), use_container_width=True)
 
     # Save into history (upsert by Date)
     st.divider()
@@ -1404,7 +1430,7 @@ elif page == "Daily Totals History":
     view["MarginPerGallon"] = history_filtered["MarginPerGallon"].map(fmt_percent)
 
     st.markdown("### Daily Fuel Summary")
-    st.dataframe(view.sort_values("Date"), use_container_width=True)
+    show_df(view.sort_values("Date"), use_container_width=True)
 
     col_download, col_space2 = st.columns([2, 3])
     with col_download:
@@ -1525,7 +1551,7 @@ elif page == "Daily Totals History":
             sm["NetInsideSales"] = sm["NetInsideSales"].map(fmt_currency)
             sm["MarginPct"] = sm["MarginPct"].map(fmt_percent)
             sm = sm.drop(columns=["Notes"], errors="ignore")
-            st.dataframe(sm.sort_values("Date"), use_container_width=True)
+            show_df(sm.sort_values("Date"), use_container_width=True)
 
             with st.expander("🗑️ Delete a Day", expanded=False):
                 del_date = st.selectbox(
@@ -1650,7 +1676,7 @@ elif page == "Tank Deliveries":
         dv["Date"] = pd.to_datetime(dv["Date"], errors="coerce").dt.strftime("%m-%d-%Y")
         dv["GallonsDelivered"] = pd.to_numeric(dv["GallonsDelivered"], errors="coerce").fillna(0.0).map(fmt_number)
         dv["PricePerGallon"] = pd.to_numeric(dv["PricePerGallon"], errors="coerce").fillna(0.0).map(fmt_currency)
-        st.dataframe(dv.sort_values("Date", ascending=False), use_container_width=True)
+        show_df(dv.sort_values("Date", ascending=False), use_container_width=True)
 
 # ============================================================
 # Page: Inside COGS (Price Book + Daily Product Report)
@@ -1726,7 +1752,7 @@ elif page == "Inside COGS Calculator":
             st.info(f"Product report loaded: {report_raw.shape[0]} rows, {report_raw.shape[1]} columns.")
             with st.expander("Preview: Product Report Raw Columns"):
                 st.write(list(report_raw.columns))
-                st.dataframe(report_raw.head(10), use_container_width=True)
+                show_df(report_raw.head(10), use_container_width=True)
 
             # Extract columns by header mapping (preferred), with position fallback
             cols = list(report_raw.columns)
@@ -1842,12 +1868,12 @@ elif page == "Inside COGS Calculator":
                     with c5:
                         st.markdown("**Price Book**")
                         if "SKU" in current_pb_for_merge.columns:
-                            st.dataframe(current_pb_for_merge[["SKU", "SKU_NOLEAD_PB"]].head(10), use_container_width=True)
+                            show_df(current_pb_for_merge[["SKU", "SKU_NOLEAD_PB"]].head(10), use_container_width=True)
                         else:
                             st.info("Price book SKU column not detected.")
                     with c6:
                         st.markdown("**Product Report**")
-                        st.dataframe(agg[["SKU", "SKU_NOLEAD_SALE"]].head(10), use_container_width=True)
+                        show_df(agg[["SKU", "SKU_NOLEAD_SALE"]].head(10), use_container_width=True)
                 
                 # Merge with suffixes for Name column conflict
                 merged = agg.merge(
@@ -1922,19 +1948,19 @@ elif page == "Inside COGS Calculator":
 
                 # Show results
                 with st.expander("Preview: Raw Uploaded Data"):
-                    st.dataframe(report_clean.head(30), use_container_width=True)
+                    show_df(report_clean.head(30), use_container_width=True)
                 with st.expander("Diagnostics: Matching Keys"):
                     st.caption("Sample of normalized keys from each file to confirm alignment.")
                     c1, c2 = st.columns(2)
                     with c1:
                         st.markdown("**Price Book (normalized)**")
                         if "SKU" in current_pb_for_merge.columns and "SKU_NOLEAD_PB" in current_pb_for_merge.columns:
-                            st.dataframe(current_pb_for_merge[["SKU", "SKU_NOLEAD_PB"]].head(20), use_container_width=True)
+                            show_df(current_pb_for_merge[["SKU", "SKU_NOLEAD_PB"]].head(20), use_container_width=True)
                         else:
                             st.info("Price book keys not available yet.")
                     with c2:
                         st.markdown("**Product Report (normalized)**")
-                        st.dataframe(agg[["SKU", "SKU_NOLEAD_SALE"]].head(20), use_container_width=True)
+                        show_df(agg[["SKU", "SKU_NOLEAD_SALE"]].head(20), use_container_width=True)
 
                 st.markdown("### Summary")
                 s1, s2, s3, s4, s5, s6, s7, s8, s9 = st.columns(9)
@@ -1972,7 +1998,7 @@ elif page == "Inside COGS Calculator":
                 view_matched["Qty"] = view_matched["Qty"].map(fmt_number)
                 for col in ["Unit Cost", "COGS", "Retail Price", "Est. Retail Sales", "Actual Sales", "Gross Profit", "CC Fees", "Net Inside Profit"]:
                     view_matched[col] = view_matched[col].map(fmt_currency)
-                st.dataframe(view_matched.sort_values(["Date Sold", "SKU"]), use_container_width=True)
+                show_df(view_matched.sort_values(["Date Sold", "SKU"]), use_container_width=True)
 
                 # Coverage metrics
                 total_units = agg["Quantity"].sum()
@@ -2013,7 +2039,7 @@ elif page == "Inside COGS Calculator":
                     })
                     view_unmatched["Qty Sold"] = view_unmatched["Qty Sold"].map(fmt_number)
                     view_unmatched["Total Sales"] = view_unmatched["Total Sales"].map(fmt_currency)
-                    st.dataframe(view_unmatched.sort_values("Qty Sold", ascending=False), use_container_width=True)
+                    show_df(view_unmatched.sort_values("Qty Sold", ascending=False), use_container_width=True)
 
                     # Download unmatched SKUs
                     unmatched_csv = unmatched_summary[["SKU", "Name", "Quantity", "ActualSales"]].to_csv(index=False)
@@ -2084,7 +2110,7 @@ elif page == "Inside COGS Calculator":
                     view_missing["Qty"] = view_missing["Qty"].map(fmt_number)
                     view_missing["Retail Price"] = view_missing["Retail Price"].map(fmt_currency)
                     view_missing["Unit Cost (Original)"] = view_missing["Unit Cost (Original)"].map(fmt_currency)
-                    st.dataframe(view_missing, use_container_width=True)
+                    show_df(view_missing, use_container_width=True)
 
                     # Download button for missing cost items
                     missing_cost_csv = missing_cost_grouped[[
@@ -2341,7 +2367,7 @@ elif page == "Inventory":
             display["Quantity"] = display["Quantity"].map(fmt_number)
             display["UnitCost"] = display["UnitCost"].map(fmt_currency)
             display["TotalValue"] = display["TotalValue"].map(fmt_currency)
-            st.dataframe(display, use_container_width=True)
+            show_df(display, use_container_width=True)
 
     with tab2:
         st.subheader("Add or Update Inventory")
@@ -2589,7 +2615,7 @@ elif page == "Inventory":
             ).map(fmt_currency)
             
             view_del = view_del.sort_values("Date", ascending=False)
-            st.dataframe(view_del[["Date", "SKU", "Name", "Quantity", "UnitCost", "TotalCost", "Vendor", "Notes"]], use_container_width=True)
+            show_df(view_del[["Date", "SKU", "Name", "Quantity", "UnitCost", "TotalCost", "Vendor", "Notes"]], use_container_width=True)
 
     with tab4:
         st.subheader("Price Book Database")
@@ -2603,9 +2629,9 @@ elif page == "Inventory":
                 try:
                     pb_raw = pd.read_csv(pb_upload)
                     st.write("**Preview uploaded file:**")
-                    st.dataframe(pb_raw.head(10), use_container_width=True)
+                    show_df(pb_raw.head(10), use_container_width=True)
                     
-                    col_map = detect_pricebook_columns(pb_raw)
+                    col_map = map_pricebook_columns(pb_raw)
                     
                     pb_clean = pb_raw.rename(columns={
                         col_map["Sku"]: "SKU",
@@ -2690,7 +2716,7 @@ elif page == "Inventory":
                 * 100
             ).map(lambda x: f"{x:.1f}%" if pd.notna(x) and x != float('inf') else "")
             
-            st.dataframe(view_pb[["SKU", "Name", "In Stock", "RetailPrice", "UnitCost", "Margin"]], use_container_width=True, height=400)
+            show_df(view_pb[["SKU", "Name", "In Stock", "RetailPrice", "UnitCost", "Margin"]], use_container_width=True, height=400)
             
             # Download current price book
             csv_download = pricebook.to_csv(index=False).encode("utf-8")
@@ -2976,7 +3002,7 @@ else:
     show["FixedCostAllocated"] = show["FixedCostAllocated"].map(fmt_currency)
     show["NetDailyProfit"] = show["NetDailyProfit"].map(fmt_currency)
 
-    st.dataframe(show, use_container_width=True)
+    show_df(show, use_container_width=True)
 
     # Month totals
     month_gross_sales = float(fuel_month2["POSRevenue"].fillna(0.0).astype(float).sum()) + float(store_month2["InsideSales"].fillna(0.0).astype(float).sum())
