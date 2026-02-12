@@ -2647,16 +2647,16 @@ elif page == "Inventory":
                 data = pd.concat([data, pd.DataFrame(added)], ignore_index=True)
             return data
 
-        def _inv_del_items_changed():
-            state = st.session_state.get("inv_del_items_editor")
-            merged = _apply_editor_state(st.session_state["inv_del_items_base"], state)
-            # Coerce numeric columns
-            for col in ["Quantity", "UnitCost", "RetailPrice", "Margin", "CurrentQty"]:
-                if col in merged.columns:
-                    merged[col] = pd.to_numeric(merged[col], errors="coerce").fillna(0.0)
-            merged = merged.fillna("")
-            filled = _autofill_delivery_items(merged)
-            st.session_state["inv_del_items_base"] = filled
+        # Apply any pending editor changes before rendering the grid
+        editor_state = st.session_state.get("inv_del_items_editor")
+        merged = _apply_editor_state(st.session_state["inv_del_items_base"], editor_state)
+        for col in ["Quantity", "UnitCost", "RetailPrice", "Margin", "CurrentQty"]:
+            if col in merged.columns:
+                merged[col] = pd.to_numeric(merged[col], errors="coerce").fillna(0.0)
+        merged = merged.fillna("")
+        st.session_state["inv_del_items_base"] = _autofill_delivery_items(merged)
+        if "inv_del_items_editor" in st.session_state:
+            st.session_state["inv_del_items_editor"] = {}
 
         items_source = st.session_state["inv_del_items_base"].copy()
         items_source = items_source.fillna("")
@@ -2679,7 +2679,6 @@ elif page == "Inventory":
                 "Notes": st.column_config.TextColumn("Notes"),
             },
             key="inv_del_items_editor",
-            on_change=_inv_del_items_changed,
         )
         st.caption("Tip: press Enter after typing a SKU/UPC to commit the cell and trigger auto-fill.")
         st.session_state["inv_del_items_base"] = items_edit
