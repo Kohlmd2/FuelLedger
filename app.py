@@ -316,7 +316,7 @@ def fmt_number(x):
 
 def _zebra_strip(df: pd.DataFrame):
     styles = pd.DataFrame("", index=df.index, columns=df.columns)
-    styles.iloc[1::2, :] = "background-color: #f5f5f5;"
+    styles.iloc[1::2, :] = "background-color: #1f232b;"
     return styles
 
 
@@ -330,7 +330,7 @@ def show_df(df: pd.DataFrame, **kwargs) -> None:
     styled = (
         df.style
         .set_table_styles([
-            {"selector": "th", "props": [("font-weight", "700"), ("font-size", "1.05rem")]}
+            {"selector": "th", "props": [("font-weight", "700"), ("font-size", "1.05rem"), ("color", "#e7e7e7")]}
         ])
         .apply(_zebra_strip, axis=None)
     )
