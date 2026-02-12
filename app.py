@@ -987,8 +987,8 @@ def save_pricebook(df: pd.DataFrame) -> None:
     out = df[["SKU", "Name", "RetailPrice", "UnitCost"]].copy()
     out["SKU"] = out["SKU"].astype(str).str.strip()
     out["Name"] = out["Name"].astype(str)
-    out["RetailPrice"] = pd.to_numeric(out["RetailPrice"], errors="coerce").fillna(0.0)
-    out["UnitCost"] = pd.to_numeric(out["UnitCost"], errors="coerce").fillna(0.0)
+    out["RetailPrice"] = out["RetailPrice"].apply(parse_money).fillna(0.0)
+    out["UnitCost"] = out["UnitCost"].apply(parse_money).fillna(0.0)
     out = out.drop_duplicates(subset=["SKU"], keep="last")
     _save_csv(user_data_file("pricebook_current.csv"), out)
 
