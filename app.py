@@ -277,6 +277,10 @@ LEGACY_FILES = [
     "tank_baseline.csv",
     "pricebook_current.csv",
     "inside_daily_totals_history.csv",
+    "invoices.csv",
+    "invoice_vendors.csv",
+    "inventory.csv",
+    "inventory_deliveries.csv",
 ]
 
 
@@ -3180,7 +3184,7 @@ else:
 
     # Month totals
     month_gross_sales = float(fuel_month2["POSRevenue"].fillna(0.0).astype(float).sum()) + float(store_month2["InsideSales"].fillna(0.0).astype(float).sum())
-    month_fuel = float(daily["NetFuelProfit"].replace("", 0).apply(lambda x: float(str(x).replace("$","").replace(",","")) if isinstance(x,str) else 0).sum()) if False else float(daily["NetFuelProfit"].astype(float).sum())
+    month_fuel = float(daily["NetFuelProfit"].astype(float).sum())
     month_inside = float(daily["NetInsideProfit"].astype(float).sum())
     month_invoices = float(daily["DailyInvoices"].astype(float).sum())
     month_station = float(daily["NetDailyProfit"].astype(float).sum())

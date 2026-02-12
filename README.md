@@ -20,6 +20,9 @@ FuelLedger is a local-first Streamlit application that tracks fuel and store pro
 - **Daily Totals & History**: Compute daily profit by grade and payment method (cash/debit vs credit); save summaries to persistent history
 - **Credit Card Fee Calculation**: Deduct credit card processing fees from gross profit; configurable fee rate
 - **Tank Deliveries Log**: Track fuel deliveries and baseline tank levels (87/93 only) to monitor inventory
+- **Invoices Page**: Maintain a vendor directory and invoice history (including invoice number and notes) for daily variable-cost tracking
+- **Inventory Management**: Track current inventory, log deliveries, and manage a centralized price book used by inside COGS calculations
+- **Remember-Me Login**: Optional remember-me flow for faster return access on trusted devices
 - **Store Profit (Day + Month)**: Combine fuel profit with inside-store sales, COGS, and variable costs; deduct monthly fixed costs (rent, electric, etc.) for a complete P&L
 
 ## Quickstart (Local)
@@ -94,6 +97,13 @@ All user data is persisted locally in the `.fuel_profit_data/` directory, create
 | `store_daily.csv` | Daily inside-store sales, COGS, and variable costs |
 | `tank_baseline.csv` | Starting tank levels and average costs (grades 87/93) |
 | `tank_deliveries.csv` | Fuel delivery log |
+| `inside_daily_totals_history.csv` | Saved inside-store daily totals |
+| `pricebook_current.csv` | Master price book used by inside COGS and inventory |
+| `invoices.csv` | Invoice history (date, vendor, amount, invoice #, notes) |
+| `invoice_vendors.csv` | Vendor directory and ordering details |
+| `inventory.csv` | Current on-hand inventory by SKU |
+| `inventory_deliveries.csv` | Inventory delivery history |
+| `remember_login.json` | Remember-me login state for current device |
 
 **Data Safety:**
 - `.fuel_profit_data/` is gitignored, so it will not be committed to version control
@@ -214,7 +224,7 @@ If column names don't match, the app will show a clear error listing the missing
 
 - **No automated tests**: Validation is manual. Test changes by exercising the Calculator → Daily Totals → Store Profit workflows.
 - **Code style**: Python, 4-space indentation, PEP 8 conventions. No linter configured; keep diffs clean.
-- **Single-file architecture**: All logic and UI live in `app.py` (~900 lines); keep related functions close together.
+- **Single-file architecture**: All logic and UI live in `app.py` (~3,194 lines); keep related functions close together until phased module extraction.
 
 For development guidelines and AI agent instructions, see [.github/copilot-instructions.md](.github/copilot-instructions.md).
 

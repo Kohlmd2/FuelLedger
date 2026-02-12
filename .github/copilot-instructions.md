@@ -2,7 +2,7 @@
 
 ## Architecture Overview
 
-This is a **single-file Streamlit application** (`app.py`, 923 lines) that tracks fuel & store profitability for gas stations. No external services—all data is persisted to `.fuel_profit_data/` (CSV files).
+This is a **single-file Streamlit application** (`app.py`, ~3,194 lines) that tracks fuel, inside-store, invoice, and inventory profitability workflows for gas stations. No external services—all data is persisted to `.fuel_profit_data/` (CSV files).
 
 ### Data Flow
 
@@ -15,7 +15,7 @@ This is a **single-file Streamlit application** (`app.py`, 923 lines) that track
 ### Key Files
 
 - `app.py`: All UI (Streamlit) + business logic (pandas transforms)
-- `.fuel_profit_data/`: Runtime CSV store (5 files: history, fixed costs, store daily, tank baseline, tank deliveries)
+- `.fuel_profit_data/`: Runtime CSV store (includes history, fixed costs, store daily, tank baseline, tank deliveries, invoices, invoice vendors, inventory, inventory deliveries, and auth artifacts)
 - `data/`: Example CSVs for development
 - `AGENTS.md`: Existing project guidelines (coding style, build commands, testing approach)
 
@@ -48,10 +48,13 @@ This is a **single-file Streamlit application** (`app.py`, 923 lines) that track
 
 ## Page Organization
 
-1. **Calculator**: Upload → clean → summarize → enter prices/costs → compute profit → save to history
-2. **Daily Totals History**: View all saved days, download CSV, reset history
-3. **Tank Deliveries**: Set baseline levels + log deliveries (87/93 only)
-4. **Store Profit (Day + Month)**: Fixed costs editor + inside-store daily inputs + monthly P&L
+1. **Fuel Calculator**: Upload → clean → summarize → enter prices/costs → compute profit → save to history
+2. **Tank Deliveries**: Set baseline levels + log deliveries (87/93 only)
+3. **Inside COGS Calculator**: Upload product report and compute COGS/profit from price book
+4. **Daily Totals History**: View all saved days, download CSV, reset history
+5. **Invoices**: Manage vendor directory and invoice history
+6. **Inventory**: Current levels, add/update stock, delivery logging, and price book management
+7. **Store Profit (Day + Month)**: Fixed costs editor + combined monthly P&L
 
 ## Development Patterns
 
@@ -94,13 +97,13 @@ This is a **single-file Streamlit application** (`app.py`, 923 lines) that track
 
 - **Run**: `streamlit run app.py` (requires `.venv` with `streamlit`, `pandas`, `numpy`)
 - **Optional**: `pip install streamlit-aggrid` for better grid UI
-- **Test workflow**: Upload example CSV from `data/` → exercise all 4 pages → verify calculations in `.fuel_profit_data/` CSVs
+- **Test workflow**: Upload example CSV from `data/` → exercise all 7 pages → verify calculations in `.fuel_profit_data/` CSVs
 - **No automated tests**: Validation is manual; verify key flows (daily totals, tank math, profit summaries)
 
 ## Conventions & Gotchas
 
 - **No formatters/linters configured**: Keep diffs clean (4-space indentation, `snake_case`)
-- **Single-file architecture**: All ~900 lines in `app.py`; keep business logic & UI close
+- **Single-file architecture**: All ~3,194 lines in `app.py`; keep business logic & UI close until phased module extraction
 - **No Git history**: Commit messages should be small & descriptive
 - **Grade constants**: `GRADE_MAP` (87, 89, 93) & `CREDIT_TENDERS`, `CASH_TENDERS` are hardcoded; change in one place
 - **Month format**: Use `"YYYY-MM"` string consistently (see `month_days()` parser)
