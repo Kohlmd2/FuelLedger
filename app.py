@@ -2597,12 +2597,10 @@ elif page == "Inventory":
                 if match_row is None:
                     continue
                 items.at[i, "SKU"] = matched_sku
-                if not _clean_str(row.get("Name", "")):
-                    items.at[i, "Name"] = match_row["Name"]
-                if float(row.get("UnitCost", 0) or 0) == 0:
-                    items.at[i, "UnitCost"] = float(match_row["UnitCost"])
-                if float(row.get("RetailPrice", 0) or 0) == 0:
-                    items.at[i, "RetailPrice"] = float(match_row["RetailPrice"])
+                # Always refresh fields from price book when SKU matches
+                items.at[i, "Name"] = match_row["Name"]
+                items.at[i, "UnitCost"] = float(match_row["UnitCost"])
+                items.at[i, "RetailPrice"] = float(match_row["RetailPrice"])
                 # Current inventory quantity (read-only)
                 if not inventory_by_sku.empty and matched_sku in inventory_by_sku.index:
                     items.at[i, "CurrentQty"] = float(inventory_by_sku.loc[matched_sku, "Quantity"])
@@ -2628,8 +2626,11 @@ elif page == "Inventory":
             if st.button("Auto-fill from Price Book", key="inv_del_autofill"):
                 st.session_state["inv_del_items_base"] = _autofill_delivery_items(st.session_state["inv_del_items_base"])
 
+        items_source = st.session_state["inv_del_items_base"].copy()
+        items_source = items_source.fillna("")
+
         items_edit = st.data_editor(
-            st.session_state["inv_del_items_base"],
+            items_source,
             num_rows="dynamic",
             use_container_width=True,
             column_config={
