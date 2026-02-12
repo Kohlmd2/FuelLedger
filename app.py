@@ -2572,15 +2572,22 @@ elif page == "Inventory":
             for col in ["SKU", "Name", "Quantity", "UnitCost", "RetailPrice", "Margin", "CurrentQty", "Notes"]:
                 if col not in items.columns:
                     items[col] = "" if col in ["SKU", "Name", "Notes"] else 0.0
+            def _clean_str(val):
+                if val is None:
+                    return ""
+                s = str(val).strip()
+                if s.lower() in {"none", "nan"}:
+                    return ""
+                return s
             for i, row in items.iterrows():
-                sku_val = str(row.get("SKU", "")).strip()
+                sku_val = _clean_str(row.get("SKU", ""))
                 if not sku_val:
                     continue
                 matched_sku, match_row = _find_pricebook_match(sku_val)
                 if match_row is None:
                     continue
                 items.at[i, "SKU"] = matched_sku
-                if not str(row.get("Name", "")).strip():
+                if not _clean_str(row.get("Name", "")):
                     items.at[i, "Name"] = match_row["Name"]
                 if float(row.get("UnitCost", 0) or 0) == 0:
                     items.at[i, "UnitCost"] = float(match_row["UnitCost"])
@@ -2627,10 +2634,12 @@ elif page == "Inventory":
             },
             key="inv_del_items_editor",
         )
+        st.caption("Tip: press Enter after typing a SKU/UPC to commit the cell and trigger auto-fill.")
         # Auto-fill after edits so newly entered SKUs populate immediately
         filled_items = _autofill_delivery_items(items_edit)
         if not filled_items.equals(items_edit):
             st.session_state["inv_del_items"] = filled_items
+            st.session_state["inv_del_items_editor"] = filled_items
             st.rerun()
         else:
             st.session_state["inv_del_items"] = items_edit
