@@ -223,10 +223,13 @@ def save_store_daily(df: pd.DataFrame) -> None:
 def load_invoices() -> pd.DataFrame:
     df = _load_csv(user_data_file("invoices.csv"))
     if df.empty:
-        return pd.DataFrame(columns=["Date", "Vendor", "Amount", "InvoiceNumber", "Notes"])
+        return pd.DataFrame(columns=["Date", "Vendor", "Amount", "PaymentType", "InvoiceNumber", "Notes"])
     df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
     df["Vendor"] = df.get("Vendor", "").astype(str)
     df["Amount"] = pd.to_numeric(df.get("Amount", 0.0), errors="coerce").fillna(0.0)
+    if "PaymentType" not in df.columns:
+        df["PaymentType"] = ""
+    df["PaymentType"] = df["PaymentType"].astype(str)
     if "InvoiceNumber" not in df.columns:
         df["InvoiceNumber"] = ""
     df["InvoiceNumber"] = df["InvoiceNumber"].astype(str)
@@ -242,11 +245,15 @@ def save_invoices(df: pd.DataFrame) -> None:
     amount_raw = out.get("Amount", 0.0)
     amount_clean = amount_raw.astype(str).str.replace("$", "", regex=False).str.replace(",", "", regex=False).str.strip()
     out["Amount"] = pd.to_numeric(amount_clean, errors="coerce").fillna(0.0)
+    if "PaymentType" not in out.columns:
+        out["PaymentType"] = ""
+    out["PaymentType"] = out["PaymentType"].astype(str)
     if "InvoiceNumber" not in out.columns:
         out["InvoiceNumber"] = ""
     out["InvoiceNumber"] = out["InvoiceNumber"].astype(str)
     if "Notes" not in out.columns:
         out["Notes"] = ""
+    out = out[["Date", "Vendor", "Amount", "PaymentType", "InvoiceNumber", "Notes"]].copy()
     _save_csv(user_data_file("invoices.csv"), out)
 
 

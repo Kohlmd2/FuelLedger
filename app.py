@@ -1470,17 +1470,26 @@ elif page == "Invoices":
     with c3:
         inv_amount = st.number_input("Amount ($)", min_value=0.0, value=0.0, step=10.0, format="%.2f", key="invoice_amount")
 
-    c4, c5 = st.columns([1, 2])
+    c4, c5, c6 = st.columns([1, 1, 2])
     with c4:
         inv_number = st.text_input("Invoice #", key="invoice_number")
     with c5:
+        inv_payment_pick = st.selectbox(
+            "Payment Type",
+            options=["Cash", "Check", "Cashiers Check", "Zelle", "Custom"],
+            key="invoice_payment_type",
+        )
+        inv_payment_custom = st.text_input("Custom payment", key="invoice_payment_custom") if inv_payment_pick == "Custom" else ""
+    with c6:
         inv_notes = st.text_input("Notes (optional)", key="invoice_notes")
+    inv_payment = inv_payment_custom.strip() if inv_payment_pick == "Custom" else inv_payment_pick
 
     if st.button("Add invoice"):
         new_row = pd.DataFrame([{
             "Date": pd.to_datetime(inv_date),
             "Vendor": inv_vendor.strip(),
             "Amount": float(inv_amount),
+            "PaymentType": inv_payment,
             "InvoiceNumber": inv_number.strip(),
             "Notes": inv_notes.strip(),
         }])
@@ -1497,6 +1506,7 @@ elif page == "Invoices":
         view["Date"] = pd.to_datetime(view["Date"], errors="coerce")
         view["Vendor"] = view["Vendor"].fillna("").astype(str)
         view["Amount"] = pd.to_numeric(view["Amount"], errors="coerce").fillna(0.0).map(fmt_currency)
+        view["PaymentType"] = view.get("PaymentType", "").fillna("").astype(str)
         view["InvoiceNumber"] = view.get("InvoiceNumber", "").fillna("").astype(str)
         view["Notes"] = view.get("Notes", "").fillna("").astype(str)
         view = view.sort_values("Date", ascending=False)
@@ -1511,6 +1521,7 @@ elif page == "Invoices":
                     "Date": st.column_config.TextColumn("Date"),
                     "Vendor": st.column_config.TextColumn("Vendor"),
                     "Amount": st.column_config.TextColumn("Amount"),
+                    "PaymentType": st.column_config.TextColumn("Payment Type"),
                     "InvoiceNumber": st.column_config.TextColumn("Invoice #"),
                     "Notes": st.column_config.TextColumn("Notes"),
                 },
@@ -1518,7 +1529,7 @@ elif page == "Invoices":
         else:
             if st.button("Add invoice history row"):
                 view = pd.concat(
-                    [view, pd.DataFrame([{"Date": "", "Vendor": "", "Amount": "$0.00", "InvoiceNumber": "", "Notes": ""}])],
+                    [view, pd.DataFrame([{"Date": "", "Vendor": "", "Amount": "$0.00", "PaymentType": "", "InvoiceNumber": "", "Notes": ""}])],
                     ignore_index=True,
                 )
             gb_i = GridOptionsBuilder.from_dataframe(view)
@@ -1907,6 +1918,7 @@ elif page == "Inventory":
                     "Date": pd.to_datetime(del_date),
                     "Vendor": del_vendor,
                     "Amount": inv_total,
+                    "PaymentType": "",
                     "InvoiceNumber": del_invoice_number.strip(),
                     "Notes": del_invoice_notes.strip() or "Auto-created from inventory delivery",
                 }])
