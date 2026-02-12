@@ -269,12 +269,13 @@ def load_invoice_vendors() -> pd.DataFrame:
                 "ContactPhone",
                 "ContactEmail",
                 "Order",
+                "PreferredPayment",
                 "OrderDay",
                 "DeliveryDay",
                 "Notes",
             ]
         )
-    for col in ["Vendor", "ContactPerson", "ContactPhone", "ContactEmail", "OrderDay", "DeliveryDay", "Notes"]:
+    for col in ["Vendor", "ContactPerson", "ContactPhone", "ContactEmail", "OrderDay", "DeliveryDay", "Notes", "PreferredPayment"]:
         if col not in df.columns:
             df[col] = ""
         df[col] = df[col].astype(str).replace({"nan": ""})
@@ -287,7 +288,7 @@ def load_invoice_vendors() -> pd.DataFrame:
 
 def save_invoice_vendors(df: pd.DataFrame) -> None:
     out = df.copy()
-    for col in ["Vendor", "ContactPerson", "ContactPhone", "ContactEmail", "Order", "OrderDay", "DeliveryDay", "Notes"]:
+    for col in ["Vendor", "ContactPerson", "ContactPhone", "ContactEmail", "Order", "PreferredPayment", "OrderDay", "DeliveryDay", "Notes"]:
         if col not in out.columns:
             out[col] = ""
         out[col] = out[col].astype(str).replace({"nan": ""})
@@ -299,6 +300,7 @@ def save_invoice_vendors(df: pd.DataFrame) -> None:
             "ContactPhone",
             "ContactEmail",
             "Order",
+            "PreferredPayment",
             "OrderDay",
             "DeliveryDay",
             "Notes",
