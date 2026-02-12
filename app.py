@@ -2816,18 +2816,19 @@ elif page == "Inventory":
                     show_df(pb_raw.head(10), use_container_width=True)
                     
                     col_map = map_pricebook_columns(pb_raw)
-                    
-                    st.write("**Column Mapping:**")
-                    st.write(col_map)  # DEBUG: Show what columns were found
-                    
-                    # Show raw values before conversion - with detailed debugging
-                    st.write("**Sample raw values (before conversion):**")
-                    unit_cost_col = col_map["UnitCost"]
-                    st.write(f"Unit Cost Column Name: **{unit_cost_col}**")
-                    st.write(f"Unit Cost Data Type in CSV: **{pb_raw[unit_cost_col].dtype}**")
-                    st.write(f"Non-empty Unit Cost count: **{pb_raw[unit_cost_col].notna().sum()} of {len(pb_raw)}**")
-                    
-                    st.dataframe(pb_raw[[col_map["Sku"], col_map["Name"], col_map["UnitCost"]]].head(15), use_container_width=True)
+
+                    with st.expander("Column mapping and sample values", expanded=False):
+                        st.write("**Column Mapping:**")
+                        st.write(col_map)  # DEBUG: Show what columns were found
+
+                        # Show raw values before conversion - with detailed debugging
+                        st.write("**Sample raw values (before conversion):**")
+                        unit_cost_col = col_map["UnitCost"]
+                        st.write(f"Unit Cost Column Name: **{unit_cost_col}**")
+                        st.write(f"Unit Cost Data Type in CSV: **{pb_raw[unit_cost_col].dtype}**")
+                        st.write(f"Non-empty Unit Cost count: **{pb_raw[unit_cost_col].notna().sum()} of {len(pb_raw)}**")
+
+                        st.dataframe(pb_raw[[col_map["Sku"], col_map["Name"], col_map["UnitCost"]]].head(15), use_container_width=True)
                     
                     pb_clean = pb_raw.rename(columns={
                         col_map["Sku"]: "SKU",
@@ -2842,8 +2843,9 @@ elif page == "Inventory":
                     pb_clean["RetailPrice"] = pb_clean["RetailPrice"].apply(parse_money).fillna(0.0)
                     pb_clean["UnitCost"] = pb_clean["UnitCost"].apply(parse_money).fillna(0.0)
                     
-                    st.write("**Sample values (after conversion):**")
-                    st.dataframe(pb_clean.head(10), use_container_width=True)  # DEBUG: Show after conversion
+                    with st.expander("Converted sample values", expanded=False):
+                        st.write("**Sample values (after conversion):**")
+                        st.dataframe(pb_clean.head(10), use_container_width=True)  # DEBUG: Show after conversion
                     
                     pb_clean = pb_clean[pb_clean["SKU"] != ""].drop_duplicates(subset=["SKU"], keep="last")
                     
