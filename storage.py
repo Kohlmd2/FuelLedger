@@ -22,6 +22,7 @@ LEGACY_FILES = [
     "invoice_vendors.csv",
     "inventory.csv",
     "inventory_deliveries.csv",
+    "loans.csv",
 ]
 
 
@@ -456,3 +457,28 @@ def save_inside_daily_totals(df: pd.DataFrame) -> None:
     ]:
         result[col] = pd.to_numeric(result[col], errors="coerce").fillna(0.0)
     _save_csv(user_data_file("inside_daily_totals_history.csv"), result)
+
+
+def load_loans() -> pd.DataFrame:
+    df = _load_csv(user_data_file("loans.csv"))
+    if df.empty:
+        return pd.DataFrame(columns=["Item", "Amount"])
+    if "Item" not in df.columns:
+        df["Item"] = ""
+    if "Amount" not in df.columns:
+        df["Amount"] = 0.0
+    df["Item"] = df["Item"].astype(str).replace({"nan": "", "None": ""})
+    df["Amount"] = pd.to_numeric(df["Amount"], errors="coerce").fillna(0.0)
+    return df[["Item", "Amount"]].copy()
+
+
+def save_loans(df: pd.DataFrame) -> None:
+    out = df.copy()
+    if "Item" not in out.columns:
+        out["Item"] = ""
+    if "Amount" not in out.columns:
+        out["Amount"] = 0.0
+    out["Item"] = out["Item"].astype(str).replace({"nan": "", "None": ""})
+    out["Amount"] = pd.to_numeric(out["Amount"], errors="coerce").fillna(0.0)
+    out = out[["Item", "Amount"]].copy()
+    _save_csv(user_data_file("loans.csv"), out)

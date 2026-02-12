@@ -34,6 +34,8 @@ from storage import (
     save_pricebook,
     load_inside_daily_totals,
     save_inside_daily_totals,
+    load_loans,
+    save_loans,
 )
 
 # Optional (recommended) grid component for persistent column widths.
@@ -731,6 +733,26 @@ elif page == "Daily Totals History":
                     save_store_daily(full)
                     st.success(f"✓ Deleted {del_date}")
                     st.rerun()
+
+    st.divider()
+    st.subheader("💸 Loans")
+    st.caption("Track loan items used in Store Profit calculations.")
+
+    loans = load_loans()
+    loans_edit = st.data_editor(
+        loans,
+        num_rows="dynamic",
+        use_container_width=True,
+        column_config={
+            "Item": st.column_config.TextColumn("Item"),
+            "Amount": st.column_config.NumberColumn("Amount", format="$%.2f"),
+        },
+        key="loans_editor",
+    )
+    if st.button("Save loans", key="save_loans_btn"):
+        save_loans(loans_edit)
+        st.success("Loans updated.")
+        st.rerun()
 
 # ============================================================
 # Page: Tank Deliveries (simple log)
@@ -2384,10 +2406,14 @@ else:
     days_in_month = len(days)
     daily["FixedCostAllocated"] = fixed_total / days_in_month if days_in_month else 0.0
 
-    daily["TotalProfit"] = daily["NetFuelProfit"] + daily["NetInsideProfit"]
+    # Loans (allocated evenly across the month)
+    loans_df = load_loans()
+    loans_total = float(pd.to_numeric(loans_df.get("Amount", 0.0), errors="coerce").fillna(0.0).sum())
+    daily["DailyLoans"] = loans_total / days_in_month if days_in_month else 0.0
+
+    daily["TotalProfit"] = daily["NetFuelProfit"] + daily["NetInsideProfit"] - daily["DailyLoans"]
     daily["NetDailyProfit"] = (
-        daily["NetFuelProfit"]
-        + daily["NetInsideProfit"]
+        daily["TotalProfit"]
         - daily["FixedCostAllocated"]
     )
 
@@ -2396,10 +2422,21 @@ else:
     show["Date"] = pd.to_datetime(show["Date"]).dt.strftime("%m-%d-%Y")
     show["NetFuelProfit"] = show["NetFuelProfit"].map(fmt_currency)
     show["NetInsideProfit"] = show["NetInsideProfit"].map(fmt_currency)
-    show["TotalProfit"] = show["TotalProfit"].map(fmt_currency)
     show["DailyInvoices"] = show["DailyInvoices"].map(fmt_currency)
     show["FixedCostAllocated"] = show["FixedCostAllocated"].map(fmt_currency)
+    show["DailyLoans"] = show["DailyLoans"].map(fmt_currency)
+    show["TotalProfit"] = show["TotalProfit"].map(fmt_currency)
     show["NetDailyProfit"] = show["NetDailyProfit"].map(fmt_currency)
+    show = show[[
+        "Date",
+        "NetFuelProfit",
+        "NetInsideProfit",
+        "DailyInvoices",
+        "FixedCostAllocated",
+        "DailyLoans",
+        "TotalProfit",
+        "NetDailyProfit",
+    ]]
 
     show_df(show, use_container_width=True)
 
@@ -2408,12 +2445,14 @@ else:
     month_fuel = float(daily["NetFuelProfit"].astype(float).sum())
     month_inside = float(daily["NetInsideProfit"].astype(float).sum())
     month_invoices = float(daily["DailyInvoices"].astype(float).sum())
+    month_loans = float(daily["DailyLoans"].astype(float).sum())
     month_station = float(daily["NetDailyProfit"].astype(float).sum())
 
-    m1, m2, m3, m4, m5, m6 = st.columns(6)
+    m1, m2, m3, m4, m5, m6, m7 = st.columns(7)
     m1.metric("Gross Sales (month)", fmt_currency(month_gross_sales))
     m2.metric("Fuel profit (month)", fmt_currency(month_fuel))
     m3.metric("Inside profit (month)", fmt_currency(month_inside))
     m4.metric("Invoices (month)", fmt_currency(month_invoices))
     m5.metric("Fixed costs (month)", fmt_currency(fixed_total))
-    m6.metric("Total station profit (month)", fmt_currency(month_station))
+    m6.metric("Loans (month)", fmt_currency(month_loans))
+    m7.metric("Total station profit (month)", fmt_currency(month_station))
