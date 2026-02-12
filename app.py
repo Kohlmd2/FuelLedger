@@ -28,6 +28,23 @@ except Exception:
 # ============================================================
 st.set_page_config(page_title="Fuel Profit Tracker", layout="wide")
 
+# Global table styling (applies to data_editor + dataframe)
+st.markdown(
+    """
+    <style>
+        [data-testid="stDataFrame"] thead th {
+            font-weight: 700 !important;
+            font-size: 1.05rem !important;
+            color: #e7e7e7 !important;
+        }
+        [data-testid="stDataFrame"] tbody tr:nth-child(even) td {
+            background-color: #1f232b !important;
+        }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 # Sidebar layout helpers
 st.markdown(
     """
