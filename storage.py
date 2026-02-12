@@ -225,34 +225,36 @@ def load_invoices() -> pd.DataFrame:
     if df.empty:
         return pd.DataFrame(columns=["Date", "Vendor", "Amount", "PaymentType", "InvoiceNumber", "Notes"])
     df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
-    df["Vendor"] = df.get("Vendor", "").astype(str)
+    df["Vendor"] = df.get("Vendor", "").astype(str).replace({"nan": "", "None": ""})
     df["Amount"] = pd.to_numeric(df.get("Amount", 0.0), errors="coerce").fillna(0.0)
     if "PaymentType" not in df.columns:
         df["PaymentType"] = ""
-    df["PaymentType"] = df["PaymentType"].astype(str)
+    df["PaymentType"] = df["PaymentType"].astype(str).replace({"nan": "", "None": ""})
     if "InvoiceNumber" not in df.columns:
         df["InvoiceNumber"] = ""
-    df["InvoiceNumber"] = df["InvoiceNumber"].astype(str)
+    df["InvoiceNumber"] = df["InvoiceNumber"].astype(str).replace({"nan": "", "None": ""})
     if "Notes" not in df.columns:
         df["Notes"] = ""
+    df["Notes"] = df["Notes"].astype(str).replace({"nan": "", "None": ""})
     return df
 
 
 def save_invoices(df: pd.DataFrame) -> None:
     out = df.copy()
     out["Date"] = pd.to_datetime(out["Date"], errors="coerce")
-    out["Vendor"] = out.get("Vendor", "").astype(str)
+    out["Vendor"] = out.get("Vendor", "").astype(str).replace({"nan": "", "None": ""})
     amount_raw = out.get("Amount", 0.0)
     amount_clean = amount_raw.astype(str).str.replace("$", "", regex=False).str.replace(",", "", regex=False).str.strip()
     out["Amount"] = pd.to_numeric(amount_clean, errors="coerce").fillna(0.0)
     if "PaymentType" not in out.columns:
         out["PaymentType"] = ""
-    out["PaymentType"] = out["PaymentType"].astype(str)
+    out["PaymentType"] = out["PaymentType"].astype(str).replace({"nan": "", "None": ""})
     if "InvoiceNumber" not in out.columns:
         out["InvoiceNumber"] = ""
-    out["InvoiceNumber"] = out["InvoiceNumber"].astype(str)
+    out["InvoiceNumber"] = out["InvoiceNumber"].astype(str).replace({"nan": "", "None": ""})
     if "Notes" not in out.columns:
         out["Notes"] = ""
+    out["Notes"] = out["Notes"].astype(str).replace({"nan": "", "None": ""})
     out = out[["Date", "Vendor", "Amount", "PaymentType", "InvoiceNumber", "Notes"]].copy()
     _save_csv(user_data_file("invoices.csv"), out)
 

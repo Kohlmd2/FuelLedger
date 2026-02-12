@@ -1504,11 +1504,11 @@ elif page == "Invoices":
     else:
         view = invoices.copy()
         view["Date"] = pd.to_datetime(view["Date"], errors="coerce")
-        view["Vendor"] = view["Vendor"].fillna("").astype(str)
+        view["Vendor"] = view["Vendor"].fillna("").astype(str).replace({"nan": "", "None": ""})
         view["Amount"] = pd.to_numeric(view["Amount"], errors="coerce").fillna(0.0).map(fmt_currency)
-        view["PaymentType"] = view.get("PaymentType", "").fillna("").astype(str)
-        view["InvoiceNumber"] = view.get("InvoiceNumber", "").fillna("").astype(str)
-        view["Notes"] = view.get("Notes", "").fillna("").astype(str)
+        view["PaymentType"] = view.get("PaymentType", "").fillna("").astype(str).replace({"nan": "", "None": ""})
+        view["InvoiceNumber"] = view.get("InvoiceNumber", "").fillna("").astype(str).replace({"nan": "", "None": ""})
+        view["Notes"] = view.get("Notes", "").fillna("").astype(str).replace({"nan": "", "None": ""})
         view = view.sort_values("Date", ascending=False)
         view["Date"] = view["Date"].dt.strftime("%m-%d-%Y")
 
