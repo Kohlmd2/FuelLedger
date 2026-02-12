@@ -2559,11 +2559,11 @@ elif page == "Inventory":
         with c_inv_num:
             del_invoice_number = st.text_input("Invoice #", key="inv_del_invoice_number")
 
-        if "inv_del_items" not in st.session_state:
-            st.session_state["inv_del_items"] = pd.DataFrame(
+        if "inv_del_items_base" not in st.session_state:
+            st.session_state["inv_del_items_base"] = pd.DataFrame(
                 [{"SKU": "", "Name": "", "Quantity": 0.0, "UnitCost": 0.0, "RetailPrice": 0.0, "Margin": 0.0, "CurrentQty": 0.0, "Notes": ""}]
             )
-            st.session_state["inv_del_items_hash"] = st.session_state["inv_del_items"].to_csv(index=False)
+            st.session_state["inv_del_items_hash"] = st.session_state["inv_del_items_base"].to_csv(index=False)
 
         def _autofill_delivery_items(df) -> pd.DataFrame:
             if df is None:
@@ -2617,26 +2617,40 @@ elif page == "Inventory":
         c_add, c_fill = st.columns([1, 2])
         with c_add:
             if st.button("➕ Add item", key="inv_del_add_item"):
-                st.session_state["inv_del_items"] = pd.concat(
+                st.session_state["inv_del_items_base"] = pd.concat(
                     [
-                        st.session_state["inv_del_items"],
+                        st.session_state["inv_del_items_base"],
                         pd.DataFrame([{"SKU": "", "Name": "", "Quantity": 0.0, "UnitCost": 0.0, "RetailPrice": 0.0, "Margin": 0.0, "CurrentQty": 0.0, "Notes": ""}]),
                     ],
                     ignore_index=True,
                 )
         with c_fill:
             if st.button("Auto-fill from Price Book", key="inv_del_autofill"):
-                st.session_state["inv_del_items"] = _autofill_delivery_items(st.session_state["inv_del_items"])
+                st.session_state["inv_del_items_base"] = _autofill_delivery_items(st.session_state["inv_del_items_base"])
 
-        def _inv_del_items_changed():
-            edited = st.session_state.get("inv_del_items_editor")
-            if edited is None:
-                return
-            filled = _autofill_delivery_items(edited)
-            st.session_state["inv_del_items"] = filled
+        def _apply_editor_state(base_df: pd.DataFrame, state):
+            if isinstance(state, pd.DataFrame):
+                return state
+            if not isinstance(state, dict):
+                return base_df
+            data = base_df.copy()
+            # Apply row edits
+            for idx, changes in state.get("edited_rows", {}).items():
+                for col, val in changes.items():
+                    if col in data.columns and idx < len(data):
+                        data.at[idx, col] = val
+            # Apply deletions
+            deleted = state.get("deleted_rows", [])
+            if deleted:
+                data = data.drop(index=deleted, errors="ignore").reset_index(drop=True)
+            # Apply additions
+            added = state.get("added_rows", [])
+            if added:
+                data = pd.concat([data, pd.DataFrame(added)], ignore_index=True)
+            return data
 
         items_edit = st.data_editor(
-            st.session_state["inv_del_items"],
+            st.session_state["inv_del_items_base"],
             num_rows="dynamic",
             use_container_width=True,
             column_config={
@@ -2650,14 +2664,16 @@ elif page == "Inventory":
                 "Notes": st.column_config.TextColumn("Notes"),
             },
             key="inv_del_items_editor",
-            on_change=_inv_del_items_changed,
         )
         st.caption("Tip: press Enter after typing a SKU/UPC to commit the cell and trigger auto-fill.")
-
-        st.session_state["inv_del_items"] = items_edit
+        # Normalize editor output and auto-fill
+        editor_state = st.session_state.get("inv_del_items_editor")
+        merged_items = _apply_editor_state(st.session_state["inv_del_items_base"], editor_state)
+        filled_items = _autofill_delivery_items(merged_items)
+        st.session_state["inv_del_items_base"] = filled_items
 
         if st.button("Log Delivery & Update Inventory", use_container_width=True):
-            items = st.session_state["inv_del_items"].copy()
+            items = st.session_state["inv_del_items_base"].copy()
             items["SKU"] = items["SKU"].astype(str).str.strip()
             items["Name"] = items["Name"].astype(str).str.strip()
             items["Quantity"] = pd.to_numeric(items["Quantity"], errors="coerce").fillna(0.0)
@@ -2712,7 +2728,9 @@ elif page == "Inventory":
                 save_inventory(current_inv)
 
                 st.success(f"Logged {len(valid)} delivery items, updated inventory, and created an invoice.")
-                st.session_state["inv_del_items"] = pd.DataFrame(columns=["SKU", "Name", "Quantity", "UnitCost", "Notes"])
+                st.session_state["inv_del_items_base"] = pd.DataFrame(
+                    [{"SKU": "", "Name": "", "Quantity": 0.0, "UnitCost": 0.0, "RetailPrice": 0.0, "Margin": 0.0, "CurrentQty": 0.0, "Notes": ""}]
+                )
                 st.rerun()
 
         st.divider()
