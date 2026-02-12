@@ -2749,59 +2749,56 @@ elif page == "Inventory":
             st.info("No deliveries logged yet.")
         else:
             view_del = deliveries.copy()
-            view_del["Date"] = pd.to_datetime(view_del["Date"], errors="coerce").dt.strftime("%m-%d-%Y")
-            view_del["Quantity"] = view_del["Quantity"].map(fmt_number)
-            view_del["UnitCost"] = view_del["UnitCost"].map(fmt_currency)
-            view_del["TotalCost"] = (
-                pd.to_numeric(deliveries["Quantity"], errors="coerce").fillna(0.0)
-                * pd.to_numeric(deliveries["UnitCost"], errors="coerce").fillna(0.0)
-            ).map(fmt_currency)
-            
-            view_del = view_del.sort_values("Date", ascending=False)
-            view_del.insert(0, "Delete", False)
+            view_del["Date"] = pd.to_datetime(view_del["Date"], errors="coerce")
+            view_del["Quantity"] = pd.to_numeric(view_del["Quantity"], errors="coerce").fillna(0.0)
+            view_del["UnitCost"] = pd.to_numeric(view_del["UnitCost"], errors="coerce").fillna(0.0)
+            view_del["TotalCost"] = view_del["Quantity"] * view_del["UnitCost"]
+            view_del["SKU"] = view_del["SKU"].astype(str)
+            view_del["Name"] = view_del["Name"].astype(str)
+            view_del["Vendor"] = view_del["Vendor"].astype(str)
+            view_del["Notes"] = view_del["Notes"].astype(str).replace({"nan": "", "None": ""})
+            view_del = view_del.sort_values("Date", ascending=False).reset_index(drop=True)
 
             del_edit = st.data_editor(
-                view_del[["Delete", "Date", "SKU", "Name", "Quantity", "UnitCost", "TotalCost", "Vendor", "Notes"]],
+                view_del[["Date", "SKU", "Name", "Quantity", "UnitCost", "TotalCost", "Vendor", "Notes"]],
                 use_container_width=True,
                 num_rows="dynamic",
+                hide_index=True,
+                disabled=["Date", "SKU", "Name", "Quantity", "UnitCost", "TotalCost", "Vendor", "Notes"],
                 column_config={
-                    "Delete": st.column_config.CheckboxColumn("Delete"),
+                    "Date": st.column_config.DateColumn("Date", format="MM-DD-YYYY"),
+                    "Quantity": st.column_config.NumberColumn("Quantity", format="%.3f"),
+                    "UnitCost": st.column_config.NumberColumn("UnitCost", format="$%.2f"),
+                    "TotalCost": st.column_config.NumberColumn("TotalCost", format="$%.2f"),
                 },
-                key="inv_delivery_delete_table",
+                key="inv_delivery_history_editor",
             )
+            st.caption("Use the left checkbox and top-right trash icon to delete selected delivery rows. Changes auto-save.")
 
-            if st.button("Delete selected deliveries"):
-                to_delete = del_edit[del_edit["Delete"]].copy()
-                if to_delete.empty:
-                    st.info("Select one or more rows to delete.")
-                else:
-                    full = load_inventory_deliveries()
-                    full["Date"] = pd.to_datetime(full["Date"], errors="coerce").dt.strftime("%m-%d-%Y")
-                    del_keys = to_delete[["Date", "SKU", "Name", "Quantity", "UnitCost", "Vendor", "Notes"]].copy()
-                    del_keys["Date"] = del_keys["Date"].astype(str)
-                    del_keys["SKU"] = del_keys["SKU"].astype(str)
-                    del_keys["Name"] = del_keys["Name"].astype(str)
-                    del_keys["Quantity"] = pd.to_numeric(del_keys["Quantity"], errors="coerce").fillna(0.0)
-                    del_keys["UnitCost"] = pd.to_numeric(del_keys["UnitCost"], errors="coerce").fillna(0.0)
-                    del_keys["Vendor"] = del_keys["Vendor"].astype(str)
-                    del_keys["Notes"] = del_keys["Notes"].astype(str)
+            edited_base = del_edit.drop(columns=["TotalCost"], errors="ignore").copy()
+            edited_base["Date"] = pd.to_datetime(edited_base["Date"], errors="coerce")
+            edited_base["SKU"] = edited_base["SKU"].astype(str).str.strip()
+            edited_base["Name"] = edited_base["Name"].astype(str)
+            edited_base["Quantity"] = pd.to_numeric(edited_base["Quantity"], errors="coerce").fillna(0.0)
+            edited_base["UnitCost"] = pd.to_numeric(edited_base["UnitCost"], errors="coerce").fillna(0.0)
+            edited_base["Vendor"] = edited_base["Vendor"].astype(str)
+            edited_base["Notes"] = edited_base["Notes"].astype(str)
+            edited_base = edited_base[
+                (edited_base["SKU"] != "") | (edited_base["Name"] != "") | (edited_base["Quantity"] != 0)
+            ].copy()
 
-                    full_cmp = full.copy()
-                    full_cmp["Date"] = pd.to_datetime(full_cmp["Date"], errors="coerce").dt.strftime("%m-%d-%Y")
-                    full_cmp["SKU"] = full_cmp["SKU"].astype(str)
-                    full_cmp["Name"] = full_cmp["Name"].astype(str)
-                    full_cmp["Quantity"] = pd.to_numeric(full_cmp["Quantity"], errors="coerce").fillna(0.0)
-                    full_cmp["UnitCost"] = pd.to_numeric(full_cmp["UnitCost"], errors="coerce").fillna(0.0)
-                    full_cmp["Vendor"] = full_cmp["Vendor"].astype(str)
-                    full_cmp["Notes"] = full_cmp["Notes"].astype(str)
+            base_compare = view_del.drop(columns=["TotalCost"], errors="ignore").copy()
+            base_compare["Date"] = pd.to_datetime(base_compare["Date"], errors="coerce")
+            base_compare["SKU"] = base_compare["SKU"].astype(str).str.strip()
+            base_compare["Name"] = base_compare["Name"].astype(str)
+            base_compare["Quantity"] = pd.to_numeric(base_compare["Quantity"], errors="coerce").fillna(0.0)
+            base_compare["UnitCost"] = pd.to_numeric(base_compare["UnitCost"], errors="coerce").fillna(0.0)
+            base_compare["Vendor"] = base_compare["Vendor"].astype(str)
+            base_compare["Notes"] = base_compare["Notes"].astype(str)
 
-                    merged = full_cmp.merge(del_keys, how="left", indicator=True,
-                                            on=["Date", "SKU", "Name", "Quantity", "UnitCost", "Vendor", "Notes"])
-                    remaining = full_cmp[merged["_merge"] == "left_only"].copy()
-                    remaining["Date"] = pd.to_datetime(remaining["Date"], errors="coerce")
-                    save_inventory_deliveries(remaining.drop(columns=["_merge"], errors="ignore"))
-                    st.success(f"Deleted {len(to_delete)} delivery row(s).")
-                    st.rerun()
+            if not edited_base.reset_index(drop=True).equals(base_compare.reset_index(drop=True)):
+                save_inventory_deliveries(edited_base)
+                st.rerun()
 
     with tab4:
         st.subheader("Price Book Database")
