@@ -2545,6 +2545,7 @@ elif page == "Inventory":
         deliveries = load_inventory_deliveries()
         vendors = load_invoice_vendors()
         vendor_list = sorted(vendors["Vendor"].fillna("").astype(str).str.strip().replace({"": None}).dropna().unique())
+        inventory_by_sku = inventory.set_index("SKU") if not inventory.empty else pd.DataFrame()
 
         col1, col2 = st.columns([1, 2])
         with col1:
@@ -2560,8 +2561,41 @@ elif page == "Inventory":
 
         st.session_state.setdefault(
             "inv_del_items",
-            pd.DataFrame(columns=["SKU", "Name", "Quantity", "UnitCost", "Notes"])
+            pd.DataFrame(columns=["SKU", "Name", "Quantity", "UnitCost", "RetailPrice", "Margin", "CurrentQty", "Notes"])
         )
+
+        def _autofill_delivery_items(df: pd.DataFrame) -> pd.DataFrame:
+            if df is None or df.empty:
+                return df
+            items = df.copy()
+            # Ensure columns exist
+            for col in ["SKU", "Name", "Quantity", "UnitCost", "RetailPrice", "Margin", "CurrentQty", "Notes"]:
+                if col not in items.columns:
+                    items[col] = "" if col in ["SKU", "Name", "Notes"] else 0.0
+            for i, row in items.iterrows():
+                sku_val = str(row.get("SKU", "")).strip()
+                if not sku_val:
+                    continue
+                matched_sku, match_row = _find_pricebook_match(sku_val)
+                if match_row is None:
+                    continue
+                items.at[i, "SKU"] = matched_sku
+                if not str(row.get("Name", "")).strip():
+                    items.at[i, "Name"] = match_row["Name"]
+                if float(row.get("UnitCost", 0) or 0) == 0:
+                    items.at[i, "UnitCost"] = float(match_row["UnitCost"])
+                if float(row.get("RetailPrice", 0) or 0) == 0:
+                    items.at[i, "RetailPrice"] = float(match_row["RetailPrice"])
+                # Current inventory quantity (read-only)
+                if not inventory_by_sku.empty and matched_sku in inventory_by_sku.index:
+                    items.at[i, "CurrentQty"] = float(inventory_by_sku.loc[matched_sku, "Quantity"])
+                else:
+                    items.at[i, "CurrentQty"] = float(row.get("CurrentQty", 0) or 0)
+                # Margin % (read-only)
+                rp = float(items.at[i, "RetailPrice"] or 0)
+                uc = float(items.at[i, "UnitCost"] or 0)
+                items.at[i, "Margin"] = ((rp - uc) / rp * 100) if rp > 0 else 0.0
+            return items
 
         c_add, c_fill = st.columns([1, 2])
         with c_add:
@@ -2569,26 +2603,16 @@ elif page == "Inventory":
                 st.session_state["inv_del_items"] = pd.concat(
                     [
                         st.session_state["inv_del_items"],
-                        pd.DataFrame([{"SKU": "", "Name": "", "Quantity": 0.0, "UnitCost": 0.0, "Notes": ""}]),
+                        pd.DataFrame([{"SKU": "", "Name": "", "Quantity": 0.0, "UnitCost": 0.0, "RetailPrice": 0.0, "Margin": 0.0, "CurrentQty": 0.0, "Notes": ""}]),
                     ],
                     ignore_index=True,
                 )
         with c_fill:
             if st.button("Auto-fill from Price Book", key="inv_del_autofill"):
-                items = st.session_state["inv_del_items"].copy()
-                for i, row in items.iterrows():
-                    sku_val = str(row.get("SKU", "")).strip()
-                    if not sku_val:
-                        continue
-                    matched_sku, match_row = _find_pricebook_match(sku_val)
-                    if match_row is None:
-                        continue
-                    items.at[i, "SKU"] = matched_sku
-                    if not str(row.get("Name", "")).strip():
-                        items.at[i, "Name"] = match_row["Name"]
-                    if float(row.get("UnitCost", 0) or 0) == 0:
-                        items.at[i, "UnitCost"] = float(match_row["UnitCost"])
-                st.session_state["inv_del_items"] = items
+                st.session_state["inv_del_items"] = _autofill_delivery_items(st.session_state["inv_del_items"])
+
+        # Auto-fill on every run (only fills blanks/zeros and recomputes derived fields)
+        st.session_state["inv_del_items"] = _autofill_delivery_items(st.session_state["inv_del_items"])
 
         items_edit = st.data_editor(
             st.session_state["inv_del_items"],
@@ -2599,6 +2623,9 @@ elif page == "Inventory":
                 "Name": st.column_config.TextColumn("Product Name"),
                 "Quantity": st.column_config.NumberColumn("Qty", min_value=0.0, step=1.0),
                 "UnitCost": st.column_config.NumberColumn("Unit Cost ($)", min_value=0.0, step=0.01, format="%.2f"),
+                "RetailPrice": st.column_config.NumberColumn("Retail ($)", min_value=0.0, step=0.01, format="%.2f", disabled=True),
+                "Margin": st.column_config.NumberColumn("Margin %", format="%.1f", disabled=True),
+                "CurrentQty": st.column_config.NumberColumn("Current Qty", format="%.2f", disabled=True),
                 "Notes": st.column_config.TextColumn("Notes"),
             },
             key="inv_del_items_editor",
