@@ -1373,32 +1373,59 @@ elif page == "Invoices":
 
     vendors = load_invoice_vendors()
     vendors = vendors.fillna("")
-    vendors_edit = st.data_editor(
-        vendors,
-        num_rows="dynamic",
-        use_container_width=True,
-        key="invoice_vendors_editor",
-        column_config={
-            "Vendor": st.column_config.TextColumn("Vendor"),
-            "ContactPerson": st.column_config.TextColumn("Contact Person"),
-            "ContactPhone": st.column_config.TextColumn("Contact Phone"),
-            "ContactEmail": st.column_config.TextColumn("Contact Email"),
-            "Order": st.column_config.SelectboxColumn(
-                "Order",
-                options=["Online", "Call", "Rep In Store"],
-                help="Preferred order method.",
+    if AgGrid is None:
+        vendors_edit = st.data_editor(
+            vendors,
+            num_rows="dynamic",
+            use_container_width=True,
+            key="invoice_vendors_editor",
+            column_config={
+                "Vendor": st.column_config.TextColumn("Vendor"),
+                "ContactPerson": st.column_config.TextColumn("Contact Person"),
+                "ContactPhone": st.column_config.TextColumn("Contact Phone"),
+                "ContactEmail": st.column_config.TextColumn("Contact Email"),
+                "Order": st.column_config.SelectboxColumn(
+                    "Order",
+                    options=["Online", "Call", "Rep In Store"],
+                    help="Preferred order method.",
+                ),
+                "OrderDay": st.column_config.SelectboxColumn(
+                    "Order Day",
+                    options=["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday", "Next Day"],
+                ),
+                "DeliveryDay": st.column_config.SelectboxColumn(
+                    "Delivery Day",
+                    options=["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday", "Next Day"],
+                ),
+                "Notes": st.column_config.TextColumn("Notes"),
+            },
+        )
+    else:
+        if st.button("Add vendor row"):
+            vendors = pd.concat(
+                [vendors, pd.DataFrame([{"Vendor": "", "ContactPerson": "", "ContactPhone": "", "ContactEmail": "", "Order": "", "OrderDay": "", "DeliveryDay": "", "Notes": ""}])],
+                ignore_index=True,
+            )
+        gb_v = GridOptionsBuilder.from_dataframe(vendors)
+        gb_v.configure_default_column(editable=True, resizable=True, sortable=False, filter=False)
+        gb_v.configure_grid_options(
+            stopEditingWhenCellsLoseFocus=True,
+            getRowStyle=JsCode(
+                "function(params){if(params.node.rowIndex % 2 === 1){return {backgroundColor: 'rgba(127,127,127,0.16)'};} return null;}"
             ),
-            "OrderDay": st.column_config.SelectboxColumn(
-                "Order Day",
-                options=["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday", "Next Day"],
-            ),
-            "DeliveryDay": st.column_config.SelectboxColumn(
-                "Delivery Day",
-                options=["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday", "Next Day"],
-            ),
-            "Notes": st.column_config.TextColumn("Notes"),
-        },
-    )
+        )
+        vend_grid = AgGrid(
+            vendors,
+            gridOptions=gb_v.build(),
+            update_mode=GridUpdateMode.VALUE_CHANGED,
+            data_return_mode=DataReturnMode.AS_INPUT,
+            fit_columns_on_grid_load=True,
+            allow_unsafe_jscode=True,
+            theme="streamlit",
+            key="invoice_vendors_aggrid",
+            height=320,
+        )
+        vendors_edit = pd.DataFrame(vend_grid["data"])
 
     vendors_clean = vendors_edit.fillna("")
     if st.button("Save vendor changes"):
@@ -1462,18 +1489,45 @@ elif page == "Invoices":
         view = view.sort_values("Date", ascending=False)
         view["Date"] = view["Date"].dt.strftime("%m-%d-%Y")
 
-        edited_invoices = st.data_editor(
-            view,
-            num_rows="dynamic",
-            use_container_width=True,
-            column_config={
-                "Date": st.column_config.TextColumn("Date"),
-                "Vendor": st.column_config.TextColumn("Vendor"),
-                "Amount": st.column_config.TextColumn("Amount"),
-                "InvoiceNumber": st.column_config.TextColumn("Invoice #"),
-                "Notes": st.column_config.TextColumn("Notes"),
-            },
-        )
+        if AgGrid is None:
+            edited_invoices = st.data_editor(
+                view,
+                num_rows="dynamic",
+                use_container_width=True,
+                column_config={
+                    "Date": st.column_config.TextColumn("Date"),
+                    "Vendor": st.column_config.TextColumn("Vendor"),
+                    "Amount": st.column_config.TextColumn("Amount"),
+                    "InvoiceNumber": st.column_config.TextColumn("Invoice #"),
+                    "Notes": st.column_config.TextColumn("Notes"),
+                },
+            )
+        else:
+            if st.button("Add invoice history row"):
+                view = pd.concat(
+                    [view, pd.DataFrame([{"Date": "", "Vendor": "", "Amount": "$0.00", "InvoiceNumber": "", "Notes": ""}])],
+                    ignore_index=True,
+                )
+            gb_i = GridOptionsBuilder.from_dataframe(view)
+            gb_i.configure_default_column(editable=True, resizable=True, sortable=False, filter=False)
+            gb_i.configure_grid_options(
+                stopEditingWhenCellsLoseFocus=True,
+                getRowStyle=JsCode(
+                    "function(params){if(params.node.rowIndex % 2 === 1){return {backgroundColor: 'rgba(127,127,127,0.16)'};} return null;}"
+                ),
+            )
+            inv_grid = AgGrid(
+                view,
+                gridOptions=gb_i.build(),
+                update_mode=GridUpdateMode.VALUE_CHANGED,
+                data_return_mode=DataReturnMode.AS_INPUT,
+                fit_columns_on_grid_load=True,
+                allow_unsafe_jscode=True,
+                theme="streamlit",
+                key="invoice_history_aggrid",
+                height=320,
+            )
+            edited_invoices = pd.DataFrame(inv_grid["data"])
         if st.button("Save invoice changes"):
             save_invoices(edited_invoices)
             st.success("Invoice history updated.")
