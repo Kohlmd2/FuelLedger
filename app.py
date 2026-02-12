@@ -60,11 +60,11 @@ st.markdown(
         [data-testid="stDataEditor"] thead th {
             font-weight: 700 !important;
             font-size: 1.05rem !important;
-            color: #e7e7e7 !important;
+            color: inherit !important;
         }
         [data-testid="stDataFrame"] tbody tr:nth-child(even) td,
         [data-testid="stDataEditor"] tbody tr:nth-child(even) td {
-            background-color: #1f232b !important;
+            background-color: rgba(127, 127, 127, 0.16) !important;
         }
     </style>
     """,
@@ -136,7 +136,7 @@ def fmt_number(x):
 
 def _zebra_strip(df: pd.DataFrame):
     styles = pd.DataFrame("", index=df.index, columns=df.columns)
-    styles.iloc[1::2, :] = "background-color: #1f232b;"
+    styles.iloc[1::2, :] = "background-color: rgba(127, 127, 127, 0.16);"
     return styles
 
 
