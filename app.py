@@ -2569,7 +2569,11 @@ elif page == "Inventory":
             if df is None:
                 return pd.DataFrame()
             if isinstance(df, dict):
-                items = pd.DataFrame(df)
+                # Normalize dict payload from st.data_editor
+                if "data" in df and isinstance(df["data"], list):
+                    items = pd.DataFrame(df["data"])
+                else:
+                    items = pd.DataFrame([df])
             else:
                 items = df.copy()
             if items.empty:
