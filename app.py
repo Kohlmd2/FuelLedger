@@ -2619,6 +2619,13 @@ elif page == "Inventory":
             if st.button("Auto-fill from Price Book", key="inv_del_autofill"):
                 st.session_state["inv_del_items"] = _autofill_delivery_items(st.session_state["inv_del_items"])
 
+        def _inv_del_items_changed():
+            edited = st.session_state.get("inv_del_items_editor")
+            if edited is None:
+                return
+            filled = _autofill_delivery_items(edited)
+            st.session_state["inv_del_items"] = filled
+
         items_edit = st.data_editor(
             st.session_state["inv_del_items"],
             num_rows="dynamic",
@@ -2634,20 +2641,11 @@ elif page == "Inventory":
                 "Notes": st.column_config.TextColumn("Notes"),
             },
             key="inv_del_items_editor",
+            on_change=_inv_del_items_changed,
         )
         st.caption("Tip: press Enter after typing a SKU/UPC to commit the cell and trigger auto-fill.")
 
-        # Auto-fill on rerun (only when data changes) without mutating widget state directly.
-        prev_hash = st.session_state.get("inv_del_items_hash")
-        current_hash = items_edit.to_csv(index=False)
-        if current_hash != prev_hash:
-            filled_items = _autofill_delivery_items(items_edit)
-            st.session_state["inv_del_items"] = filled_items
-            st.session_state["inv_del_items_hash"] = filled_items.to_csv(index=False)
-            if not filled_items.equals(items_edit):
-                st.rerun()
-        else:
-            st.session_state["inv_del_items"] = items_edit
+        st.session_state["inv_del_items"] = items_edit
 
         if st.button("Log Delivery & Update Inventory", use_container_width=True):
             items = st.session_state["inv_del_items"].copy()
