@@ -2565,10 +2565,15 @@ elif page == "Inventory":
             )
             st.session_state["inv_del_items_hash"] = st.session_state["inv_del_items"].to_csv(index=False)
 
-        def _autofill_delivery_items(df: pd.DataFrame) -> pd.DataFrame:
-            if df is None or df.empty:
-                return df
-            items = df.copy()
+        def _autofill_delivery_items(df) -> pd.DataFrame:
+            if df is None:
+                return pd.DataFrame()
+            if isinstance(df, dict):
+                items = pd.DataFrame(df)
+            else:
+                items = df.copy()
+            if items.empty:
+                return items
             # Ensure columns exist
             for col in ["SKU", "Name", "Quantity", "UnitCost", "RetailPrice", "Margin", "CurrentQty", "Notes"]:
                 if col not in items.columns:
