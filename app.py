@@ -2552,7 +2552,11 @@ elif page == "Inventory":
         with col2:
             del_vendor = st.selectbox("Vendor", options=vendor_list, key="inv_del_vendor") if vendor_list else st.text_input("Vendor", key="inv_del_vendor")
 
-        del_invoice_number = st.text_input("Invoice #", key="inv_del_invoice_number")
+        c_inv_notes, c_inv_num = st.columns([2, 1])
+        with c_inv_notes:
+            del_invoice_notes = st.text_input("Notes (invoice)", key="inv_del_invoice_notes")
+        with c_inv_num:
+            del_invoice_number = st.text_input("Invoice #", key="inv_del_invoice_number")
 
         st.session_state.setdefault(
             "inv_del_items",
@@ -2621,7 +2625,7 @@ elif page == "Inventory":
                     "Vendor": del_vendor,
                     "Amount": inv_total,
                     "InvoiceNumber": del_invoice_number.strip(),
-                    "Notes": "Auto-created from inventory delivery",
+                    "Notes": del_invoice_notes.strip() or "Auto-created from inventory delivery",
                 }])
                 invoice_rows = pd.concat([invoice_rows, invoice_row], ignore_index=True)
                 save_invoices(invoice_rows)
