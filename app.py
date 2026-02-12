@@ -2552,6 +2552,8 @@ elif page == "Inventory":
         with col2:
             del_vendor = st.selectbox("Vendor", options=vendor_list, key="inv_del_vendor") if vendor_list else st.text_input("Vendor", key="inv_del_vendor")
 
+        del_invoice_number = st.text_input("Invoice #", key="inv_del_invoice_number")
+
         st.session_state.setdefault(
             "inv_del_items",
             pd.DataFrame(columns=["SKU", "Name", "Quantity", "UnitCost", "Notes"])
@@ -2611,6 +2613,19 @@ elif page == "Inventory":
             if valid.empty:
                 st.error("Add at least one item with SKU, Name, and Quantity > 0.")
             else:
+                # Create invoice entry from this delivery
+                inv_total = float((valid["Quantity"] * valid["UnitCost"]).sum())
+                invoice_rows = load_invoices()
+                invoice_row = pd.DataFrame([{
+                    "Date": pd.to_datetime(del_date),
+                    "Vendor": del_vendor,
+                    "Amount": inv_total,
+                    "InvoiceNumber": del_invoice_number.strip(),
+                    "Notes": "Auto-created from inventory delivery",
+                }])
+                invoice_rows = pd.concat([invoice_rows, invoice_row], ignore_index=True)
+                save_invoices(invoice_rows)
+
                 # Log deliveries
                 valid = valid.copy()
                 valid["Date"] = pd.to_datetime(del_date)
@@ -2641,7 +2656,7 @@ elif page == "Inventory":
                     current_inv = pd.concat([current_inv, new_row], ignore_index=True)
                 save_inventory(current_inv)
 
-                st.success(f"Logged {len(valid)} delivery items and updated inventory.")
+                st.success(f"Logged {len(valid)} delivery items, updated inventory, and created an invoice.")
                 st.session_state["inv_del_items"] = pd.DataFrame(columns=["SKU", "Name", "Quantity", "UnitCost", "Notes"])
                 st.rerun()
 
