@@ -2626,6 +2626,38 @@ elif page == "Inventory":
             if st.button("Auto-fill from Price Book", key="inv_del_autofill"):
                 st.session_state["inv_del_items_base"] = _autofill_delivery_items(st.session_state["inv_del_items_base"])
 
+        def _apply_editor_state(base_df: pd.DataFrame, state) -> pd.DataFrame:
+            if isinstance(state, pd.DataFrame):
+                return state
+            if not isinstance(state, dict):
+                return base_df
+            data = base_df.copy()
+            # Apply row edits
+            for idx, changes in state.get("edited_rows", {}).items():
+                for col, val in changes.items():
+                    if col in data.columns and idx < len(data):
+                        data.at[idx, col] = val
+            # Apply deletions
+            deleted = state.get("deleted_rows", [])
+            if deleted:
+                data = data.drop(index=deleted, errors="ignore").reset_index(drop=True)
+            # Apply additions
+            added = state.get("added_rows", [])
+            if added:
+                data = pd.concat([data, pd.DataFrame(added)], ignore_index=True)
+            return data
+
+        def _inv_del_items_changed():
+            state = st.session_state.get("inv_del_items_editor")
+            merged = _apply_editor_state(st.session_state["inv_del_items_base"], state)
+            # Coerce numeric columns
+            for col in ["Quantity", "UnitCost", "RetailPrice", "Margin", "CurrentQty"]:
+                if col in merged.columns:
+                    merged[col] = pd.to_numeric(merged[col], errors="coerce").fillna(0.0)
+            merged = merged.fillna("")
+            filled = _autofill_delivery_items(merged)
+            st.session_state["inv_del_items_base"] = filled
+
         items_source = st.session_state["inv_del_items_base"].copy()
         items_source = items_source.fillna("")
         for col in ["Quantity", "UnitCost", "RetailPrice", "Margin", "CurrentQty"]:
@@ -2647,15 +2679,10 @@ elif page == "Inventory":
                 "Notes": st.column_config.TextColumn("Notes"),
             },
             key="inv_del_items_editor",
+            on_change=_inv_del_items_changed,
         )
         st.caption("Tip: press Enter after typing a SKU/UPC to commit the cell and trigger auto-fill.")
-        # Auto-fill based on edited DataFrame
-        filled_items = _autofill_delivery_items(items_edit)
-        if not filled_items.equals(items_edit):
-            st.session_state["inv_del_items_base"] = filled_items
-            st.rerun()
-        else:
-            st.session_state["inv_del_items_base"] = items_edit
+        st.session_state["inv_del_items_base"] = items_edit
 
         if st.button("Log Delivery & Update Inventory", use_container_width=True):
             items = st.session_state["inv_del_items_base"].copy()
