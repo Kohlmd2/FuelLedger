@@ -2758,23 +2758,50 @@ elif page == "Inventory":
             ).map(fmt_currency)
             
             view_del = view_del.sort_values("Date", ascending=False)
-            show_df(view_del[["Date", "SKU", "Name", "Quantity", "UnitCost", "TotalCost", "Vendor", "Notes"]], use_container_width=True)
+            view_del.insert(0, "Delete", False)
 
-            st.divider()
-            del_dates = sorted(pd.to_datetime(deliveries["Date"], errors="coerce").dt.date.unique())
-            del_date = st.selectbox(
-                "Delete a delivery day",
-                del_dates,
-                key="inv_delivery_delete_date",
-                format_func=lambda d: d.strftime("%m-%d-%Y") if pd.notna(d) else "",
+            del_edit = st.data_editor(
+                view_del[["Delete", "Date", "SKU", "Name", "Quantity", "UnitCost", "TotalCost", "Vendor", "Notes"]],
+                use_container_width=True,
+                num_rows="dynamic",
+                column_config={
+                    "Delete": st.column_config.CheckboxColumn("Delete"),
+                },
+                key="inv_delivery_delete_table",
             )
-            if st.button("Delete all deliveries for selected day"):
-                full = load_inventory_deliveries()
-                full["Date"] = pd.to_datetime(full["Date"], errors="coerce")
-                full = full[full["Date"].dt.date != del_date]
-                save_inventory_deliveries(full)
-                st.success(f"Deleted deliveries for {del_date}.")
-                st.rerun()
+
+            if st.button("Delete selected deliveries"):
+                to_delete = del_edit[del_edit["Delete"]].copy()
+                if to_delete.empty:
+                    st.info("Select one or more rows to delete.")
+                else:
+                    full = load_inventory_deliveries()
+                    full["Date"] = pd.to_datetime(full["Date"], errors="coerce").dt.strftime("%m-%d-%Y")
+                    del_keys = to_delete[["Date", "SKU", "Name", "Quantity", "UnitCost", "Vendor", "Notes"]].copy()
+                    del_keys["Date"] = del_keys["Date"].astype(str)
+                    del_keys["SKU"] = del_keys["SKU"].astype(str)
+                    del_keys["Name"] = del_keys["Name"].astype(str)
+                    del_keys["Quantity"] = pd.to_numeric(del_keys["Quantity"], errors="coerce").fillna(0.0)
+                    del_keys["UnitCost"] = pd.to_numeric(del_keys["UnitCost"], errors="coerce").fillna(0.0)
+                    del_keys["Vendor"] = del_keys["Vendor"].astype(str)
+                    del_keys["Notes"] = del_keys["Notes"].astype(str)
+
+                    full_cmp = full.copy()
+                    full_cmp["Date"] = pd.to_datetime(full_cmp["Date"], errors="coerce").dt.strftime("%m-%d-%Y")
+                    full_cmp["SKU"] = full_cmp["SKU"].astype(str)
+                    full_cmp["Name"] = full_cmp["Name"].astype(str)
+                    full_cmp["Quantity"] = pd.to_numeric(full_cmp["Quantity"], errors="coerce").fillna(0.0)
+                    full_cmp["UnitCost"] = pd.to_numeric(full_cmp["UnitCost"], errors="coerce").fillna(0.0)
+                    full_cmp["Vendor"] = full_cmp["Vendor"].astype(str)
+                    full_cmp["Notes"] = full_cmp["Notes"].astype(str)
+
+                    merged = full_cmp.merge(del_keys, how="left", indicator=True,
+                                            on=["Date", "SKU", "Name", "Quantity", "UnitCost", "Vendor", "Notes"])
+                    remaining = full_cmp[merged["_merge"] == "left_only"].copy()
+                    remaining["Date"] = pd.to_datetime(remaining["Date"], errors="coerce")
+                    save_inventory_deliveries(remaining.drop(columns=["_merge"], errors="ignore"))
+                    st.success(f"Deleted {len(to_delete)} delivery row(s).")
+                    st.rerun()
 
     with tab4:
         st.subheader("Price Book Database")
