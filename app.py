@@ -2635,12 +2635,16 @@ elif page == "Inventory":
             key="inv_del_items_editor",
         )
         st.caption("Tip: press Enter after typing a SKU/UPC to commit the cell and trigger auto-fill.")
-        # Auto-fill after edits so newly entered SKUs populate immediately
-        filled_items = _autofill_delivery_items(items_edit)
-        if not filled_items.equals(items_edit):
+
+        # Auto-fill on rerun (only when data changes) without mutating widget state directly.
+        prev_hash = st.session_state.get("inv_del_items_hash")
+        current_hash = items_edit.to_csv(index=False)
+        if current_hash != prev_hash:
+            filled_items = _autofill_delivery_items(items_edit)
             st.session_state["inv_del_items"] = filled_items
-            st.session_state["inv_del_items_editor"] = filled_items
-            st.rerun()
+            st.session_state["inv_del_items_hash"] = filled_items.to_csv(index=False)
+            if not filled_items.equals(items_edit):
+                st.rerun()
         else:
             st.session_state["inv_del_items"] = items_edit
 
