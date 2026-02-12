@@ -2611,9 +2611,6 @@ elif page == "Inventory":
             if st.button("Auto-fill from Price Book", key="inv_del_autofill"):
                 st.session_state["inv_del_items"] = _autofill_delivery_items(st.session_state["inv_del_items"])
 
-        # Auto-fill on every run (only fills blanks/zeros and recomputes derived fields)
-        st.session_state["inv_del_items"] = _autofill_delivery_items(st.session_state["inv_del_items"])
-
         items_edit = st.data_editor(
             st.session_state["inv_del_items"],
             num_rows="dynamic",
@@ -2630,7 +2627,13 @@ elif page == "Inventory":
             },
             key="inv_del_items_editor",
         )
-        st.session_state["inv_del_items"] = items_edit
+        # Auto-fill after edits so newly entered SKUs populate immediately
+        filled_items = _autofill_delivery_items(items_edit)
+        if not filled_items.equals(items_edit):
+            st.session_state["inv_del_items"] = filled_items
+            st.rerun()
+        else:
+            st.session_state["inv_del_items"] = items_edit
 
         if st.button("Log Delivery & Update Inventory", use_container_width=True):
             items = st.session_state["inv_del_items"].copy()
