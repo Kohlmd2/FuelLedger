@@ -66,6 +66,12 @@ st.markdown(
         [data-testid="stDataEditor"] tbody tr:nth-child(even) td {
             background-color: rgba(127, 127, 127, 0.16) !important;
         }
+        [data-testid="stDataEditor"] [role="row"]:nth-child(even) [role="gridcell"] {
+            background-color: rgba(127, 127, 127, 0.16) !important;
+        }
+        [data-testid="stDataEditor"] [role="gridcell"] {
+            color: inherit !important;
+        }
     </style>
     """,
     unsafe_allow_html=True,
