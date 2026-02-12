@@ -1401,11 +1401,6 @@ elif page == "Invoices":
             },
         )
     else:
-        if st.button("Add vendor row"):
-            vendors = pd.concat(
-                [vendors, pd.DataFrame([{"Vendor": "", "ContactPerson": "", "ContactPhone": "", "ContactEmail": "", "Order": "", "OrderDay": "", "DeliveryDay": "", "Notes": ""}])],
-                ignore_index=True,
-            )
         gb_v = GridOptionsBuilder.from_dataframe(vendors)
         gb_v.configure_default_column(editable=True, resizable=True, sortable=False, filter=False)
         gb_v.configure_grid_options(
@@ -1428,7 +1423,25 @@ elif page == "Invoices":
         vendors_edit = pd.DataFrame(vend_grid["data"])
 
     vendors_clean = vendors_edit.fillna("")
-    if st.button("Save vendor changes"):
+    vc1, vc2 = st.columns([1, 1])
+    with vc1:
+        if st.button("Add vendor row", key="vendor_add_row_bottom"):
+            add_row = pd.DataFrame([{
+                "Vendor": "",
+                "ContactPerson": "",
+                "ContactPhone": "",
+                "ContactEmail": "",
+                "Order": "",
+                "OrderDay": "",
+                "DeliveryDay": "",
+                "Notes": "",
+            }])
+            updated = pd.concat([vendors_clean, add_row], ignore_index=True)
+            save_invoice_vendors(updated)
+            st.rerun()
+    with vc2:
+        save_clicked = st.button("Save vendor changes")
+    if save_clicked:
         save_invoice_vendors(vendors_clean)
         st.session_state["invoice_vendors_last_saved"] = vendors_clean.to_csv(index=False)
         st.success("Vendor directory updated.")
