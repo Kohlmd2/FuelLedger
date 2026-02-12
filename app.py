@@ -1389,7 +1389,10 @@ elif page == "Invoices":
                     options=["Online", "Call", "Rep In Store"],
                     help="Preferred order method.",
                 ),
-                "PreferredPayment": st.column_config.TextColumn("Preferred Payment"),
+                "PreferredPayment": st.column_config.SelectboxColumn(
+                    "Preferred Payment",
+                    options=["", "Cash", "Check", "Cashiers Check", "Zelle", "Custom"],
+                ),
                 "OrderDay": st.column_config.SelectboxColumn(
                     "Order Day",
                     options=["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday", "Next Day"],
