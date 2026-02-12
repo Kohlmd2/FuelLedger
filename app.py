@@ -2559,10 +2559,11 @@ elif page == "Inventory":
         with c_inv_num:
             del_invoice_number = st.text_input("Invoice #", key="inv_del_invoice_number")
 
-        st.session_state.setdefault(
-            "inv_del_items",
-            pd.DataFrame(columns=["SKU", "Name", "Quantity", "UnitCost", "RetailPrice", "Margin", "CurrentQty", "Notes"])
-        )
+        if "inv_del_items" not in st.session_state:
+            st.session_state["inv_del_items"] = pd.DataFrame(
+                [{"SKU": "", "Name": "", "Quantity": 0.0, "UnitCost": 0.0, "RetailPrice": 0.0, "Margin": 0.0, "CurrentQty": 0.0, "Notes": ""}]
+            )
+            st.session_state["inv_del_items_hash"] = st.session_state["inv_del_items"].to_csv(index=False)
 
         def _autofill_delivery_items(df: pd.DataFrame) -> pd.DataFrame:
             if df is None or df.empty:
