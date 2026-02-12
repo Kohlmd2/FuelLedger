@@ -2760,6 +2760,22 @@ elif page == "Inventory":
             view_del = view_del.sort_values("Date", ascending=False)
             show_df(view_del[["Date", "SKU", "Name", "Quantity", "UnitCost", "TotalCost", "Vendor", "Notes"]], use_container_width=True)
 
+            st.divider()
+            del_dates = sorted(pd.to_datetime(deliveries["Date"], errors="coerce").dt.date.unique())
+            del_date = st.selectbox(
+                "Delete a delivery day",
+                del_dates,
+                key="inv_delivery_delete_date",
+                format_func=lambda d: d.strftime("%m-%d-%Y") if pd.notna(d) else "",
+            )
+            if st.button("Delete all deliveries for selected day"):
+                full = load_inventory_deliveries()
+                full["Date"] = pd.to_datetime(full["Date"], errors="coerce")
+                full = full[full["Date"].dt.date != del_date]
+                save_inventory_deliveries(full)
+                st.success(f"Deleted deliveries for {del_date}.")
+                st.rerun()
+
     with tab4:
         st.subheader("Price Book Database")
         st.caption("Manage your master price book. This is used by the Inside COGS Calculator to calculate costs.")
