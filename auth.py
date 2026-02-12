@@ -172,6 +172,7 @@ def require_login() -> None:
             login = st.text_input("Username or email")
             password = st.text_input("Password", type="password")
             remember_me = st.checkbox("Remember me on this device", value=True)
+            st.caption("Use remember-me only on a trusted/private device.")
             submitted = st.form_submit_button("Log in")
     if submitted:
         row = _verify_user(login, password)

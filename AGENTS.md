@@ -21,7 +21,8 @@
 - No formatter or linter is configured; keep diffs clean and avoid unused imports.
 
 ## Testing Guidelines
-- No automated test framework is configured.
+- Lightweight `unittest` coverage exists for core pure functions.
+- Run tests with: `python3 -m unittest discover -s tests -v`
 - Validate changes by running the app and exercising key flows:
   - Load CSVs from `data/`.
   - Check daily totals, tank math, and profit summaries for expected values.

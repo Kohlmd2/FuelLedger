@@ -219,6 +219,10 @@ if st.session_state.get("is_admin"):
 
 st.sidebar.markdown('<div class="sidebar-bottom">', unsafe_allow_html=True)
 
+if st.sidebar.button("Forget this device"):
+    _clear_remembered_user()
+    st.sidebar.success("Saved login removed for this device.")
+
 if st.sidebar.button("Log out"):
     _clear_remembered_user()
     for k in [
