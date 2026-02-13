@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import hashlib
 from pathlib import Path
 
 import pandas as pd
@@ -488,3 +489,68 @@ def save_loans(df: pd.DataFrame) -> None:
     out["Amount"] = pd.to_numeric(out["Amount"], errors="coerce").fillna(0.0)
     out = out[["Date", "Item", "Amount"]].copy()
     _save_csv(user_data_file("loans.csv"), out)
+
+
+def _product_exports_dir() -> Path:
+    p = get_user_data_dir() / "product_exports"
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+def load_product_export_index() -> pd.DataFrame:
+    df = _load_csv(user_data_file("product_export_index.csv"))
+    if df.empty:
+        return pd.DataFrame(
+            columns=["ExportId", "UploadedAt", "YearMonth", "SourceFile", "DataFile", "RowCount", "ColCount", "FileHash"]
+        )
+    for c in ["ExportId", "YearMonth", "SourceFile", "DataFile", "FileHash"]:
+        if c not in df.columns:
+            df[c] = ""
+        df[c] = df[c].astype(str)
+    if "UploadedAt" not in df.columns:
+        df["UploadedAt"] = pd.NaT
+    df["UploadedAt"] = pd.to_datetime(df["UploadedAt"], errors="coerce")
+    for c in ["RowCount", "ColCount"]:
+        if c not in df.columns:
+            df[c] = 0
+        df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0).astype(int)
+    return df
+
+
+def save_product_export(df: pd.DataFrame, source_file: str, file_bytes: bytes, year_month: str | None = None) -> str:
+    index_df = load_product_export_index()
+    file_hash = hashlib.sha256(file_bytes).hexdigest()
+    existing = index_df[index_df["FileHash"] == file_hash]
+    if not existing.empty:
+        return existing.iloc[0]["ExportId"]
+
+    ts = datetime.now()
+    export_id = ts.strftime("%Y%m%d%H%M%S%f")
+    data_file = f"product_export_{export_id}.csv"
+    ym = (year_month or ts.strftime("%Y-%m")).strip()
+
+    _save_csv(_product_exports_dir() / data_file, df)
+
+    new_row = pd.DataFrame(
+        [
+            {
+                "ExportId": export_id,
+                "UploadedAt": ts,
+                "YearMonth": ym,
+                "SourceFile": str(source_file or ""),
+                "DataFile": data_file,
+                "RowCount": int(len(df)),
+                "ColCount": int(len(df.columns)),
+                "FileHash": file_hash,
+            }
+        ]
+    )
+    out = pd.concat([index_df, new_row], ignore_index=True)
+    _save_csv(user_data_file("product_export_index.csv"), out)
+    return export_id
+
+
+def load_product_export_table(data_file: str) -> pd.DataFrame:
+    if not data_file:
+        return pd.DataFrame()
+    return _load_csv(_product_exports_dir() / str(data_file))

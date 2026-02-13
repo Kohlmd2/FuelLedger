@@ -36,6 +36,9 @@ from storage import (
     save_inside_daily_totals,
     load_loans,
     save_loans,
+    load_product_export_index,
+    save_product_export,
+    load_product_export_table,
 )
 
 # Optional (recommended) grid component for persistent column widths.
@@ -206,7 +209,7 @@ migrate_legacy_data_if_present()
 st.sidebar.title("Navigation")
 page = st.sidebar.radio(
     "Go to",
-    ["Fuel Calculator", "Tank Deliveries", "Inside COGS Calculator", "Daily Totals History", "Invoices", "Inventory", "Store Profit (Day + Month)"],
+    ["Fuel Calculator", "Tank Deliveries", "Inside COGS Calculator", "Daily Totals History", "Product Exports", "Invoices", "Inventory", "Store Profit (Day + Month)"],
     index=0,
 )
 
@@ -778,6 +781,55 @@ elif page == "Daily Totals History":
         st.rerun()
 
 # ============================================================
+# Page: Product Exports
+# ============================================================
+
+elif page == "Product Exports":
+    st.header("Product Exports")
+    st.caption("All uploaded ProductReportExport files grouped by month.")
+
+    exports_idx = load_product_export_index()
+    if exports_idx.empty:
+        st.info("No product export uploads found yet. Upload reports in Inside COGS Calculator first.")
+        st.stop()
+
+    exports_idx["UploadedAt"] = pd.to_datetime(exports_idx["UploadedAt"], errors="coerce")
+    exports_idx["YearMonth"] = exports_idx["YearMonth"].astype(str)
+    exports_idx = exports_idx.sort_values("UploadedAt", ascending=False)
+
+    months = [m for m in sorted(exports_idx["YearMonth"].dropna().unique(), reverse=True) if m]
+    for ym in months:
+        month_docs = exports_idx[exports_idx["YearMonth"] == ym].copy().sort_values("UploadedAt", ascending=False)
+        with st.expander(f"{ym} ({len(month_docs)} files)", expanded=False):
+            doc_options = month_docs.apply(
+                lambda r: f"{pd.to_datetime(r['UploadedAt']).strftime('%m-%d-%Y %H:%M')} | {r['SourceFile']} ({int(r['RowCount'])} rows)",
+                axis=1,
+            ).tolist()
+            selected_label = st.selectbox(
+                "Document",
+                options=doc_options,
+                key=f"exports_doc_{ym}",
+            )
+            selected_row = month_docs.iloc[doc_options.index(selected_label)]
+            table_df = load_product_export_table(selected_row["DataFile"])
+            if table_df.empty:
+                st.warning("Stored table is empty or missing.")
+                continue
+
+            page_size = 20
+            total_rows = len(table_df)
+            total_pages = max(1, (total_rows + page_size - 1) // page_size)
+            page_num = st.selectbox(
+                "Page",
+                options=list(range(1, total_pages + 1)),
+                key=f"exports_page_{ym}_{selected_row['ExportId']}",
+            )
+            start_i = (page_num - 1) * page_size
+            end_i = min(start_i + page_size, total_rows)
+            st.caption(f"Showing rows {start_i + 1}-{end_i} of {total_rows}")
+            show_df(table_df.iloc[start_i:end_i], use_container_width=True, height=520)
+
+# ============================================================
 # Page: Tank Deliveries (simple log)
 # ============================================================
 
@@ -1020,6 +1072,19 @@ elif page == "Inside COGS Calculator":
             if report_clean is None:
                 st.stop()
             if report_clean is not None:
+                report_month = datetime.now().strftime("%Y-%m")
+                if not report_clean.empty and report_clean["DateSold"].notna().any():
+                    report_month = pd.to_datetime(report_clean["DateSold"], errors="coerce").dropna().min().strftime("%Y-%m")
+                try:
+                    _ = save_product_export(
+                        df=report_raw,
+                        source_file=product_report_upload.name,
+                        file_bytes=product_report_upload.getvalue(),
+                        year_month=report_month,
+                    )
+                except Exception:
+                    pass
+
                 # Aggregate by (Date, SKU)
                 report_clean = report_clean[report_clean["DateSold"].notna() & (report_clean["SKU"].str.len() > 0)]
                 agg = report_clean.groupby(["DateSold", "SKU"], as_index=False).agg({
