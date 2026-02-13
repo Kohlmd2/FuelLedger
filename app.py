@@ -826,6 +826,24 @@ elif page == "Product Exports":
                 "Date Sold",
             ]
             visible_df = table_df.drop(columns=[c for c in hide_cols if c in table_df.columns], errors="ignore")
+            visible_df = visible_df.rename(
+                columns={
+                    "Actual Unit Price": "Unit Price",
+                    "Quantity Sold In Transaction": "Quantity Sold",
+                    "Final Products Amount For Transaction": "Retail Price",
+                }
+            )
+            if {"Unit Price", "Retail Price"}.issubset(visible_df.columns):
+                unit_vals = visible_df["Unit Price"].apply(parse_money)
+                retail_vals = visible_df["Retail Price"].apply(parse_money)
+                margin = np.where(
+                    retail_vals > 0,
+                    ((retail_vals - unit_vals) / retail_vals) * 100.0,
+                    np.nan,
+                )
+                visible_df["Margain %"] = pd.Series(margin).map(
+                    lambda x: f"{x:.1f}%" if pd.notna(x) else ""
+                )
 
             st.caption(f"Showing {len(visible_df)} rows (scroll to view more)")
             show_df(visible_df, use_container_width=True, height=620)
