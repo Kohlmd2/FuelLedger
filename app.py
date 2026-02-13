@@ -816,8 +816,19 @@ elif page == "Product Exports":
                 st.warning("Stored table is empty or missing.")
                 continue
 
-            st.caption(f"Showing {len(table_df)} rows (scroll to view more)")
-            show_df(table_df, use_container_width=True, height=620)
+            hide_cols = [
+                "Register # Sold At",
+                "Register Name Sold At",
+                "Modifier",
+                "Promotion Amount",
+                "Promotion Reason",
+                "Normal Unit Retail Price",
+                "Date Sold",
+            ]
+            visible_df = table_df.drop(columns=[c for c in hide_cols if c in table_df.columns], errors="ignore")
+
+            st.caption(f"Showing {len(visible_df)} rows (scroll to view more)")
+            show_df(visible_df, use_container_width=True, height=620)
 
 # ============================================================
 # Page: Tank Deliveries (simple log)
