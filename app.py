@@ -816,18 +816,8 @@ elif page == "Product Exports":
                 st.warning("Stored table is empty or missing.")
                 continue
 
-            page_size = 20
-            total_rows = len(table_df)
-            total_pages = max(1, (total_rows + page_size - 1) // page_size)
-            page_num = st.selectbox(
-                "Page",
-                options=list(range(1, total_pages + 1)),
-                key=f"exports_page_{ym}_{selected_row['ExportId']}",
-            )
-            start_i = (page_num - 1) * page_size
-            end_i = min(start_i + page_size, total_rows)
-            st.caption(f"Showing rows {start_i + 1}-{end_i} of {total_rows}")
-            show_df(table_df.iloc[start_i:end_i], use_container_width=True, height=520)
+            st.caption(f"Showing {len(table_df)} rows (scroll to view more)")
+            show_df(table_df, use_container_width=True, height=620)
 
 # ============================================================
 # Page: Tank Deliveries (simple log)
