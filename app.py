@@ -739,18 +739,38 @@ elif page == "Daily Totals History":
     st.caption("Track loan items used in Store Profit calculations.")
 
     loans = load_loans()
+    loans["Date"] = pd.to_datetime(loans.get("Date"), errors="coerce")
+    loans_month = selected_month if "selected_month" in locals() else datetime.now().strftime("%Y-%m")
+    y_l, m_l = loans_month.split("-")
+    month_start = pd.Timestamp(int(y_l), int(m_l), 1)
+    month_end = pd.Timestamp(int(y_l), int(m_l), month_days(loans_month))
+
+    loans_for_month = loans[(loans["Date"] >= month_start) & (loans["Date"] <= month_end)].copy()
+    month_days_df = pd.DataFrame({"Date": pd.date_range(month_start, month_end, freq="D")})
+    loans_prefill = month_days_df.merge(loans_for_month, on="Date", how="left")
+    loans_prefill["Item"] = loans_prefill.get("Item", "").fillna("")
+    loans_prefill["Amount"] = pd.to_numeric(loans_prefill.get("Amount", 0.0), errors="coerce").fillna(0.0)
+
     loans_edit = st.data_editor(
-        loans,
+        loans_prefill,
         num_rows="dynamic",
         use_container_width=True,
         column_config={
+            "Date": st.column_config.DateColumn("Date", format="MM-DD-YYYY"),
             "Item": st.column_config.TextColumn("Item"),
             "Amount": st.column_config.NumberColumn("Amount", format="$%.2f"),
         },
         key="loans_editor",
     )
     if st.button("Save loans", key="save_loans_btn"):
-        save_loans(loans_edit)
+        loans_edit = loans_edit.copy()
+        loans_edit["Date"] = pd.to_datetime(loans_edit["Date"], errors="coerce")
+        loans_edit["Item"] = loans_edit["Item"].astype(str).replace({"nan": "", "None": ""})
+        loans_edit["Amount"] = pd.to_numeric(loans_edit["Amount"], errors="coerce").fillna(0.0)
+
+        loans_other = loans[~((loans["Date"] >= month_start) & (loans["Date"] <= month_end))].copy()
+        loans_merged = pd.concat([loans_other, loans_edit], ignore_index=True)
+        save_loans(loans_merged)
         st.success("Loans updated.")
         st.rerun()
 
@@ -2406,10 +2426,16 @@ else:
     days_in_month = len(days)
     daily["FixedCostAllocated"] = fixed_total / days_in_month if days_in_month else 0.0
 
-    # Loans (allocated evenly across the month)
+    # Loans (by date)
     loans_df = load_loans()
-    loans_total = float(pd.to_numeric(loans_df.get("Amount", 0.0), errors="coerce").fillna(0.0).sum())
-    daily["DailyLoans"] = loans_total / days_in_month if days_in_month else 0.0
+    loans_df["Date"] = pd.to_datetime(loans_df.get("Date"), errors="coerce").dt.date
+    loans_df = loans_df[(pd.to_datetime(loans_df["Date"]) >= start) & (pd.to_datetime(loans_df["Date"]) <= end)].copy()
+    if not loans_df.empty:
+        loans_daily = loans_df.groupby("Date", as_index=False).agg(DailyLoans=("Amount", "sum"))
+    else:
+        loans_daily = pd.DataFrame(columns=["Date", "DailyLoans"])
+    daily = daily.merge(loans_daily, on="Date", how="left")
+    daily["DailyLoans"] = pd.to_numeric(daily.get("DailyLoans", 0.0), errors="coerce").fillna(0.0)
 
     daily["TotalProfit"] = daily["NetFuelProfit"] + daily["NetInsideProfit"] - daily["DailyLoans"]
     daily["NetDailyProfit"] = (

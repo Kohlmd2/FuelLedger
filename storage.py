@@ -462,23 +462,29 @@ def save_inside_daily_totals(df: pd.DataFrame) -> None:
 def load_loans() -> pd.DataFrame:
     df = _load_csv(user_data_file("loans.csv"))
     if df.empty:
-        return pd.DataFrame(columns=["Item", "Amount"])
+        return pd.DataFrame(columns=["Date", "Item", "Amount"])
+    if "Date" not in df.columns:
+        df["Date"] = pd.NaT
     if "Item" not in df.columns:
         df["Item"] = ""
     if "Amount" not in df.columns:
         df["Amount"] = 0.0
+    df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
     df["Item"] = df["Item"].astype(str).replace({"nan": "", "None": ""})
     df["Amount"] = pd.to_numeric(df["Amount"], errors="coerce").fillna(0.0)
-    return df[["Item", "Amount"]].copy()
+    return df[["Date", "Item", "Amount"]].copy()
 
 
 def save_loans(df: pd.DataFrame) -> None:
     out = df.copy()
+    if "Date" not in out.columns:
+        out["Date"] = pd.NaT
     if "Item" not in out.columns:
         out["Item"] = ""
     if "Amount" not in out.columns:
         out["Amount"] = 0.0
+    out["Date"] = pd.to_datetime(out["Date"], errors="coerce")
     out["Item"] = out["Item"].astype(str).replace({"nan": "", "None": ""})
     out["Amount"] = pd.to_numeric(out["Amount"], errors="coerce").fillna(0.0)
-    out = out[["Item", "Amount"]].copy()
+    out = out[["Date", "Item", "Amount"]].copy()
     _save_csv(user_data_file("loans.csv"), out)
