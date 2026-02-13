@@ -822,17 +822,23 @@ elif page == "Product Exports":
                 "Modifier",
                 "Promotion Amount",
                 "Promotion Reason",
+                "Discount Amount",
+                "Discount Reason",
                 "Normal Unit Retail Price",
                 "Date Sold",
             ]
             visible_df = table_df.drop(columns=[c for c in hide_cols if c in table_df.columns], errors="ignore")
-            visible_df = visible_df.rename(
-                columns={
-                    "Actual Unit Price": "Unit Price",
-                    "Quantity Sold In Transaction": "Quantity Sold",
-                    "Final Products Amount For Transaction": "Retail Price",
-                }
-            )
+
+            # Case-insensitive renames for exports that vary by capitalization.
+            lower_to_actual = {str(c).strip().lower(): c for c in visible_df.columns}
+            rename_map = {}
+            if "actual unit price" in lower_to_actual:
+                rename_map[lower_to_actual["actual unit price"]] = "Unit Price"
+            if "quantity sold in transaction" in lower_to_actual:
+                rename_map[lower_to_actual["quantity sold in transaction"]] = "Quantity Sold"
+            if "final products amount for transaction" in lower_to_actual:
+                rename_map[lower_to_actual["final products amount for transaction"]] = "Retail Price"
+            visible_df = visible_df.rename(columns=rename_map)
             if {"Unit Price", "Retail Price"}.issubset(visible_df.columns):
                 unit_vals = visible_df["Unit Price"].apply(parse_money)
                 retail_vals = visible_df["Retail Price"].apply(parse_money)
