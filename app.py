@@ -158,10 +158,13 @@ def show_df(df: pd.DataFrame, **kwargs) -> None:
     styled = (
         df.style
         .set_table_styles([
-            {"selector": "th", "props": [("font-weight", "700"), ("font-size", "1.05rem"), ("color", "#e7e7e7")]}
+            {"selector": "th", "props": [("font-weight", "700"), ("font-size", "1.05rem")]},
+            {"selector": "td", "props": [("text-align", "center")]},
         ])
         .apply(_zebra_strip, axis=None)
     )
+    if "Date" in df.columns:
+        styled = styled.set_properties(subset=["Date"], **{"text-align": "left"})
     st.dataframe(styled, **kwargs)
 
 # For conditional coloring in tables (Streamlit dataframe styling)
