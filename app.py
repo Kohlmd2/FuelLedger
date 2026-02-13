@@ -824,10 +824,10 @@ elif page == "Product Exports":
                 "Promotion Reason",
                 "Discount Amount",
                 "Discount Reason",
-                "Normal Unit Retail Price",
                 "Date Sold",
             ]
-            visible_df = table_df.drop(columns=[c for c in hide_cols if c in table_df.columns], errors="ignore")
+            working_df = table_df.copy()
+            visible_df = working_df.drop(columns=[c for c in hide_cols if c in working_df.columns], errors="ignore")
 
             # Case-insensitive renames for exports that vary by capitalization.
             lower_to_actual = {str(c).strip().lower(): c for c in visible_df.columns}
@@ -842,6 +842,10 @@ elif page == "Product Exports":
             if {"Unit Price", "Retail Price"}.issubset(visible_df.columns):
                 unit_vals = visible_df["Unit Price"].apply(parse_money)
                 retail_vals = visible_df["Retail Price"].apply(parse_money)
+                if "Quantity Sold" in visible_df.columns:
+                    qty_vals = pd.to_numeric(visible_df["Quantity Sold"], errors="coerce").replace({0: np.nan})
+                    # Final Products Amount is line total; convert to per-unit retail for margin math.
+                    retail_vals = (retail_vals / qty_vals).replace([np.inf, -np.inf], np.nan).fillna(retail_vals)
                 margin = np.where(
                     retail_vals > 0,
                     ((retail_vals - unit_vals) / retail_vals) * 100.0,
@@ -854,7 +858,37 @@ elif page == "Product Exports":
                 )
 
             st.caption(f"Showing {len(visible_df)} rows (scroll to view more)")
-            show_df(visible_df, use_container_width=True, height=620)
+            if AgGrid is None:
+                show_df(visible_df, use_container_width=True, height=620)
+            else:
+                gb_pe = GridOptionsBuilder.from_dataframe(visible_df)
+                gb_pe.configure_default_column(
+                    resizable=True,
+                    sortable=True,
+                    filter=True,
+                    wrapText=True,
+                    autoHeight=True,
+                )
+                for col in visible_df.columns:
+                    if col in {"Store Name", "Name"}:
+                        gb_pe.configure_column(col, cellStyle={"textAlign": "left"})
+                    else:
+                        gb_pe.configure_column(col, cellStyle={"textAlign": "center"})
+                gb_pe.configure_grid_options(
+                    suppressHorizontalScroll=False,
+                    ensureDomOrder=True,
+                )
+                AgGrid(
+                    visible_df,
+                    gridOptions=gb_pe.build(),
+                    update_mode=GridUpdateMode.NO_UPDATE,
+                    data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
+                    fit_columns_on_grid_load=False,
+                    theme="streamlit",
+                    allow_unsafe_jscode=True,
+                    key=f"product_exports_grid_{ym}_{selected_row['ExportId']}",
+                    height=620,
+                )
 
 # ============================================================
 # Page: Tank Deliveries (simple log)
