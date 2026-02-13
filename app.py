@@ -831,29 +831,54 @@ elif page == "Product Exports":
 
             # Case-insensitive renames for exports that vary by capitalization.
             lower_to_actual = {str(c).strip().lower(): c for c in visible_df.columns}
-            rename_map = {}
-            if "actual unit price" in lower_to_actual:
-                rename_map[lower_to_actual["actual unit price"]] = "Unit Price"
-            if "quantity sold in transaction" in lower_to_actual:
-                rename_map[lower_to_actual["quantity sold in transaction"]] = "Quantity Sold"
-            if "final products amount for transaction" in lower_to_actual:
-                rename_map[lower_to_actual["final products amount for transaction"]] = "Retail Price"
-            visible_df = visible_df.rename(columns=rename_map)
-            if {"Unit Price", "Retail Price"}.issubset(visible_df.columns):
-                unit_vals = visible_df["Unit Price"].apply(parse_money)
+            actual_unit_col = lower_to_actual.get("actual unit price")
+            qty_col = lower_to_actual.get("quantity sold in transaction")
+            final_total_col = lower_to_actual.get("final products amount for transaction")
+            normal_retail_col = lower_to_actual.get("normal unit retail price")
+
+            if qty_col:
+                visible_df = visible_df.rename(columns={qty_col: "Quantity Sold"})
+            if final_total_col:
+                visible_df = visible_df.rename(columns={final_total_col: "Transaction Total"})
+
+            if actual_unit_col or "Unit Price" in visible_df.columns:
+                source_unit = actual_unit_col if actual_unit_col else "Unit Price"
+                unit_vals = visible_df[source_unit].apply(parse_money)
+                visible_df["Unit Price"] = unit_vals
+                if source_unit != "Unit Price":
+                    visible_df = visible_df.drop(columns=[source_unit], errors="ignore")
+            else:
+                unit_vals = pd.Series([np.nan] * len(visible_df), index=visible_df.index)
+
+            if normal_retail_col:
+                retail_vals = visible_df[normal_retail_col].apply(parse_money)
+                visible_df["Retail Price"] = retail_vals
+                visible_df = visible_df.drop(columns=[normal_retail_col], errors="ignore")
+            elif "Retail Price" in visible_df.columns:
                 retail_vals = visible_df["Retail Price"].apply(parse_money)
                 if "Quantity Sold" in visible_df.columns:
                     qty_vals = pd.to_numeric(visible_df["Quantity Sold"], errors="coerce").replace({0: np.nan})
-                    # Final Products Amount is line total; convert to per-unit retail for margin math.
                     retail_vals = (retail_vals / qty_vals).replace([np.inf, -np.inf], np.nan).fillna(retail_vals)
+                visible_df["Retail Price"] = retail_vals
+            elif "Transaction Total" in visible_df.columns:
+                retail_vals = visible_df["Transaction Total"].apply(parse_money)
+                if "Quantity Sold" in visible_df.columns:
+                    qty_vals = pd.to_numeric(visible_df["Quantity Sold"], errors="coerce").replace({0: np.nan})
+                    retail_vals = (retail_vals / qty_vals).replace([np.inf, -np.inf], np.nan).fillna(retail_vals)
+                visible_df["Retail Price"] = retail_vals
+            else:
+                retail_vals = pd.Series([np.nan] * len(visible_df), index=visible_df.index)
+
+            if len(visible_df) > 0:
                 margin = np.where(
-                    retail_vals > 0,
-                    ((retail_vals - unit_vals) / retail_vals) * 100.0,
+                    (pd.to_numeric(retail_vals, errors="coerce") > 0) & pd.to_numeric(unit_vals, errors="coerce").notna(),
+                    ((pd.to_numeric(retail_vals, errors="coerce") - pd.to_numeric(unit_vals, errors="coerce"))
+                     / pd.to_numeric(retail_vals, errors="coerce")) * 100.0,
                     np.nan,
                 )
-                visible_df["Unit Price"] = unit_vals.map(fmt_currency)
-                visible_df["Retail Price"] = retail_vals.map(fmt_currency)
-                visible_df["Margain %"] = pd.Series(margin).map(
+                visible_df["Unit Price"] = pd.to_numeric(unit_vals, errors="coerce").map(fmt_currency)
+                visible_df["Retail Price"] = pd.to_numeric(retail_vals, errors="coerce").map(fmt_currency)
+                visible_df["Margain %"] = pd.Series(margin, index=visible_df.index).map(
                     lambda x: f"{x:.1f}%" if pd.notna(x) else ""
                 )
 
@@ -871,12 +896,17 @@ elif page == "Product Exports":
                 )
                 for col in visible_df.columns:
                     if col in {"Store Name", "Name"}:
-                        gb_pe.configure_column(col, cellStyle={"textAlign": "left"})
+                        gb_pe.configure_column(col, cellStyle={"textAlign": "left"}, headerClass="ag-left-header")
                     else:
-                        gb_pe.configure_column(col, cellStyle={"textAlign": "center"})
+                        gb_pe.configure_column(col, cellStyle={"textAlign": "center"}, headerClass="ag-center-header")
                 gb_pe.configure_grid_options(
                     suppressHorizontalScroll=False,
                     ensureDomOrder=True,
+                    getRowStyle=JsCode(
+                        "function(params){if(params.node.rowIndex % 2 === 1){return {backgroundColor: 'rgba(127,127,127,0.16)'};} return null;}"
+                    ),
+                    wrapHeaderText=True,
+                    autoHeaderHeight=True,
                 )
                 AgGrid(
                     visible_df,
@@ -886,6 +916,10 @@ elif page == "Product Exports":
                     fit_columns_on_grid_load=False,
                     theme="streamlit",
                     allow_unsafe_jscode=True,
+                    custom_css={
+                        ".ag-header-cell-label": {"justify-content": "center", "white-space": "normal", "line-height": "1.2"},
+                        ".ag-header-cell.ag-left-header .ag-header-cell-label": {"justify-content": "flex-start"},
+                    },
                     key=f"product_exports_grid_{ym}_{selected_row['ExportId']}",
                     height=620,
                 )
