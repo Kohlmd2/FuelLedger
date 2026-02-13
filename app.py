@@ -847,6 +847,8 @@ elif page == "Product Exports":
                     ((retail_vals - unit_vals) / retail_vals) * 100.0,
                     np.nan,
                 )
+                visible_df["Unit Price"] = unit_vals.map(fmt_currency)
+                visible_df["Retail Price"] = retail_vals.map(fmt_currency)
                 visible_df["Margain %"] = pd.Series(margin).map(
                     lambda x: f"{x:.1f}%" if pd.notna(x) else ""
                 )
