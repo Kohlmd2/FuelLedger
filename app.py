@@ -886,6 +886,17 @@ elif page == "Product Exports":
             if AgGrid is None:
                 show_df(visible_df, use_container_width=True, height=620)
             else:
+                grid_key = f"product_exports_grid_{ym}_{selected_row['ExportId']}"
+                col_state_key = f"{grid_key}_col_state"
+                saved_col_state = st.session_state.get(col_state_key, [])
+
+                # Reapply saved column order (if any)
+                if isinstance(saved_col_state, list) and saved_col_state:
+                    saved_order = [c.get("colId") for c in saved_col_state if isinstance(c, dict) and c.get("colId") in visible_df.columns]
+                    if saved_order:
+                        remaining = [c for c in visible_df.columns if c not in saved_order]
+                        visible_df = visible_df[saved_order + remaining]
+
                 gb_pe = GridOptionsBuilder.from_dataframe(visible_df)
                 gb_pe.configure_default_column(
                     resizable=True,
@@ -894,11 +905,37 @@ elif page == "Product Exports":
                     wrapText=True,
                     autoHeight=True,
                 )
+                state_by_col = {}
+                if isinstance(saved_col_state, list):
+                    for s in saved_col_state:
+                        if isinstance(s, dict) and s.get("colId"):
+                            state_by_col[s["colId"]] = s
                 for col in visible_df.columns:
+                    persisted = state_by_col.get(col, {})
+                    col_kwargs = {}
+                    if "width" in persisted:
+                        try:
+                            col_kwargs["width"] = int(persisted["width"])
+                        except Exception:
+                            pass
+                    if "hide" in persisted:
+                        col_kwargs["hide"] = bool(persisted["hide"])
+                    if persisted.get("pinned") in {"left", "right"}:
+                        col_kwargs["pinned"] = persisted["pinned"]
                     if col in {"Store Name", "Name"}:
-                        gb_pe.configure_column(col, cellStyle={"textAlign": "left"}, headerClass="ag-left-header")
+                        gb_pe.configure_column(
+                            col,
+                            cellStyle={"textAlign": "left"},
+                            headerClass="ag-left-header",
+                            **col_kwargs,
+                        )
                     else:
-                        gb_pe.configure_column(col, cellStyle={"textAlign": "center"}, headerClass="ag-center-header")
+                        gb_pe.configure_column(
+                            col,
+                            cellStyle={"textAlign": "center"},
+                            headerClass="ag-center-header",
+                            **col_kwargs,
+                        )
                 gb_pe.configure_grid_options(
                     suppressHorizontalScroll=False,
                     ensureDomOrder=True,
@@ -908,10 +945,14 @@ elif page == "Product Exports":
                     wrapHeaderText=True,
                     autoHeaderHeight=True,
                 )
-                AgGrid(
+                update_mode_pe = GridUpdateMode.MODEL_CHANGED
+                if hasattr(GridUpdateMode, "COLUMN_CHANGED"):
+                    update_mode_pe = update_mode_pe | GridUpdateMode.COLUMN_CHANGED
+
+                grid_response = AgGrid(
                     visible_df,
                     gridOptions=gb_pe.build(),
-                    update_mode=GridUpdateMode.NO_UPDATE,
+                    update_mode=update_mode_pe,
                     data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
                     fit_columns_on_grid_load=False,
                     theme="streamlit",
@@ -920,9 +961,15 @@ elif page == "Product Exports":
                         ".ag-header-cell-label": {"justify-content": "center", "white-space": "normal", "line-height": "1.2"},
                         ".ag-header-cell.ag-left-header .ag-header-cell-label": {"justify-content": "flex-start"},
                     },
-                    key=f"product_exports_grid_{ym}_{selected_row['ExportId']}",
+                    key=grid_key,
                     height=620,
                 )
+                # Persist column sizing/order between reruns for this document grid.
+                new_col_state = grid_response.get("column_state")
+                if not new_col_state and isinstance(grid_response.get("grid_state"), dict):
+                    new_col_state = grid_response["grid_state"].get("columnState")
+                if isinstance(new_col_state, list) and new_col_state:
+                    st.session_state[col_state_key] = new_col_state
 
 # ============================================================
 # Page: Tank Deliveries (simple log)
